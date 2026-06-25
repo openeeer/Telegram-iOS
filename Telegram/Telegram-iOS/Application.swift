@@ -1,15 +1,13 @@
 import UIKit
-import Phantom
+import SettingsUI
 
 @objc(Application) class Application: UIApplication {
     override init() {
         super.init()
-        // Stage 2c-1 smoke test: verify the Phantom static library links and its
-        // C-exported symbols are callable. Replaced by real wiring in 2c-2.
-        if let v = PhantomBindingVersion() {
-            NSLog("[Phantom] binding version: \(String(cString: v))")
-            PhantomFreeString(v)
-        }
+        // If a Phantom proxy was configured & enabled, (re)start the embedded
+        // engine early so its local SOCKS5 listener is up before Telegram's
+        // network restores and dials the active (local) proxy.
+        phantomApplyPersistedConfigAtLaunch()
     }
 
     override func sendEvent(_ event: UIEvent) {

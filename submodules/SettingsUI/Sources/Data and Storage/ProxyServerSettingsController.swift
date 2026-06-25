@@ -29,6 +29,7 @@ private enum ProxySettingsSection: Int32 {
     case mode
     case connection
     case credentials
+    case phantom
     case share
 }
 
@@ -38,6 +39,7 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     
     case modeSocks5(PresentationTheme, String, Bool)
     case modeMtp(PresentationTheme, String, Bool)
+    case modePhantom(PresentationTheme, String, Bool)
     
     case connectionHeader(PresentationTheme, String)
     case connectionServer(PresentationTheme, PresentationStrings, String, String)
@@ -48,18 +50,27 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     case credentialsPassword(PresentationTheme, PresentationStrings, String, String)
     case credentialsSecret(PresentationTheme, PresentationStrings, String, String)
     
+    case phantomHeader(PresentationTheme, String)
+    case phantomSecret(PresentationTheme, String, String)
+    case phantomPublicKey(PresentationTheme, String, String)
+    case phantomShortId(PresentationTheme, String, String)
+    case phantomSni(PresentationTheme, String, String)
+    case phantomInfo(PresentationTheme, String)
+    
     case share(PresentationTheme, String, Bool)
     
     var section: ItemListSectionId {
         switch self {
             case .usePasteboardSettings, .usePasteboardInfo:
                 return ProxySettingsSection.pasteboard.rawValue
-            case .modeSocks5, .modeMtp:
+            case .modeSocks5, .modeMtp, .modePhantom:
                 return ProxySettingsSection.mode.rawValue
             case .connectionHeader, .connectionServer, .connectionPort:
                 return ProxySettingsSection.connection.rawValue
             case .credentialsHeader, .credentialsUsername, .credentialsPassword, .credentialsSecret:
                 return ProxySettingsSection.credentials.rawValue
+            case .phantomHeader, .phantomSecret, .phantomPublicKey, .phantomShortId, .phantomSni, .phantomInfo:
+                return ProxySettingsSection.phantom.rawValue
             case .share:
                 return ProxySettingsSection.share.rawValue
         }
@@ -75,22 +86,36 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return 2
             case .modeMtp:
                 return 3
-            case .connectionHeader:
+            case .modePhantom:
                 return 4
-            case .connectionServer:
+            case .connectionHeader:
                 return 5
-            case .connectionPort:
+            case .connectionServer:
                 return 6
-            case .credentialsHeader:
+            case .connectionPort:
                 return 7
-            case .credentialsUsername:
+            case .credentialsHeader:
                 return 8
-            case .credentialsPassword:
+            case .credentialsUsername:
                 return 9
-            case .credentialsSecret:
+            case .credentialsPassword:
                 return 10
-            case .share:
+            case .credentialsSecret:
+                return 11
+            case .phantomHeader:
                 return 12
+            case .phantomSecret:
+                return 13
+            case .phantomPublicKey:
+                return 14
+            case .phantomShortId:
+                return 15
+            case .phantomSni:
+                return 16
+            case .phantomInfo:
+                return 17
+            case .share:
+                return 18
         }
     }
     
@@ -120,6 +145,14 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                     arguments.updateState { state in
                         var state = state
                         state.mode = .mtp
+                        return state
+                    }
+                })
+            case let .modePhantom(_, text, value):
+                return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: text, style: .left, checked: value, zeroSeparatorInsets: false, sectionId: self.section, action: {
+                    arguments.updateState { state in
+                        var state = state
+                        state.mode = .phantom
                         return state
                     }
                 })
@@ -167,6 +200,42 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                         return state
                     }
                 }, action: {})
+            case let .phantomHeader(_, text):
+                return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+            case let .phantomSecret(_, placeholder, text):
+                return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: text, placeholder: placeholder, type: .regular(capitalization: false, autocorrection: false), sectionId: self.section, textUpdated: { value in
+                    arguments.updateState { current in
+                        var state = current
+                        state.secret = value
+                        return state
+                    }
+                }, action: {})
+            case let .phantomPublicKey(_, placeholder, text):
+                return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: text, placeholder: placeholder, type: .regular(capitalization: false, autocorrection: false), sectionId: self.section, textUpdated: { value in
+                    arguments.updateState { current in
+                        var state = current
+                        state.realityPublicKey = value
+                        return state
+                    }
+                }, action: {})
+            case let .phantomShortId(_, placeholder, text):
+                return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: text, placeholder: placeholder, type: .regular(capitalization: false, autocorrection: false), sectionId: self.section, textUpdated: { value in
+                    arguments.updateState { current in
+                        var state = current
+                        state.realityShortId = value
+                        return state
+                    }
+                }, action: {})
+            case let .phantomSni(_, placeholder, text):
+                return ItemListSingleLineInputItem(presentationData: presentationData, systemStyle: .glass, title: NSAttributedString(), text: text, placeholder: placeholder, type: .regular(capitalization: false, autocorrection: false), sectionId: self.section, textUpdated: { value in
+                    arguments.updateState { current in
+                        var state = current
+                        state.sni = value
+                        return state
+                    }
+                }, action: {})
+            case let .phantomInfo(_, text):
+                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
             case let .share(_, text, enabled):
                 return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: enabled ? .generic : .disabled, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                     arguments.share()
@@ -178,6 +247,7 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
 private enum ProxyServerSettingsControllerMode {
     case socks5
     case mtp
+    case phantom
 }
 
 private struct ProxyServerSettingsControllerState: Equatable {
@@ -187,6 +257,9 @@ private struct ProxyServerSettingsControllerState: Equatable {
     var username: String
     var password: String
     var secret: String
+    var realityPublicKey: String
+    var realityShortId: String
+    var sni: String
     
     var isComplete: Bool {
         if self.host.isEmpty || self.port.isEmpty || Int(self.port) == nil {
@@ -198,6 +271,13 @@ private struct ProxyServerSettingsControllerState: Equatable {
             case .mtp:
                 let secretIsValid = MTProxySecret.parse(self.secret) != nil
                 if !secretIsValid {
+                    return false
+                }
+            case .phantom:
+                if self.secret.count < 32 {
+                    return false
+                }
+                if self.realityPublicKey.isEmpty || self.realityShortId.isEmpty || self.sni.isEmpty {
                     return false
                 }
         }
@@ -214,6 +294,7 @@ private func proxyServerSettingsControllerEntries(presentationData: Presentation
     
     entries.append(.modeSocks5(presentationData.theme, presentationData.strings.SocksProxySetup_ProxySocks5, state.mode == .socks5))
     entries.append(.modeMtp(presentationData.theme, presentationData.strings.SocksProxySetup_ProxyTelegram, state.mode == .mtp))
+    entries.append(.modePhantom(presentationData.theme, "Phantom", state.mode == .phantom))
     
     entries.append(.connectionHeader(presentationData.theme, presentationData.strings.SocksProxySetup_Connection.uppercased()))
     entries.append(.connectionServer(presentationData.theme, presentationData.strings, presentationData.strings.SocksProxySetup_Hostname, state.host))
@@ -227,9 +308,18 @@ private func proxyServerSettingsControllerEntries(presentationData: Presentation
         case .mtp:
             entries.append(.credentialsHeader(presentationData.theme, presentationData.strings.SocksProxySetup_RequiredCredentials))
             entries.append(.credentialsSecret(presentationData.theme, presentationData.strings, presentationData.strings.SocksProxySetup_SecretPlaceholder, state.secret))
+        case .phantom:
+            entries.append(.phantomHeader(presentationData.theme, "PHANTOM (REALITY)"))
+            entries.append(.phantomSecret(presentationData.theme, "Secret (hex)", state.secret))
+            entries.append(.phantomPublicKey(presentationData.theme, "Reality public key", state.realityPublicKey))
+            entries.append(.phantomShortId(presentationData.theme, "Reality short id", state.realityShortId))
+            entries.append(.phantomSni(presentationData.theme, "SNI", state.sni))
+            entries.append(.phantomInfo(presentationData.theme, "Phantom runs locally and routes Telegram through 127.0.0.1:\(phantomLocalSocksPort). Server is host:port above; SNI must match the reality dest."))
     }
     
-    entries.append(.share(presentationData.theme, presentationData.strings.Conversation_ContextMenuShare, state.isComplete))
+    if state.mode != .phantom {
+        entries.append(.share(presentationData.theme, presentationData.strings.Conversation_ContextMenuShare, state.isComplete))
+    }
     
     return entries
 }
@@ -244,6 +334,8 @@ private func proxyServerSettings(with state: ProxyServerSettingsControllerState)
                 if let parsedSecret = parsedSecret {
                     return ProxyServerSettings(host: state.host, port: port, connection: .mtp(secret: parsedSecret.serialize()))
                 }
+            case .phantom:
+                return nil
         }
     }
     return nil
@@ -280,7 +372,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         }
     }
 
-    let initialState = ProxyServerSettingsControllerState(mode: currentMode, host: currentSettings?.host ?? "", port: (currentSettings?.port).flatMap { "\($0)" } ?? "", username: currentUsername ?? "", password: currentPassword ?? "", secret: currentSecret ?? "")
+    let initialState = ProxyServerSettingsControllerState(mode: currentMode, host: currentSettings?.host ?? "", port: (currentSettings?.port).flatMap { "\($0)" } ?? "", username: currentUsername ?? "", password: currentPassword ?? "", secret: currentSecret ?? "", realityPublicKey: "", realityShortId: "", sni: "")
     let stateValue = Atomic(value: initialState)
     let statePromise = ValuePromise(initialState, ignoreRepeated: true)
     let updateState: ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void = { f in
@@ -289,6 +381,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
     
     var pushControllerImpl: ((ViewController) -> Void)?
     var dismissImpl: (() -> Void)?
+    var presentControllerImpl: ((ViewController, ViewControllerPresentationArguments?) -> Void)?
     
     var shareImpl: (() -> Void)?
     
@@ -327,6 +420,20 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
             dismissImpl?()
         })
         let rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: state.isComplete, action: {
+            if state.mode == .phantom {
+                let config = PhantomProxyConfig(remote: "\(state.host):\(state.port)", secret: state.secret, sni: state.sni, realityPublicKey: state.realityPublicKey, realityShortId: state.realityShortId, vision: true, postQuantum: true, tlsFragment: true)
+                phantomEngineStop()
+                if let errorMessage = phantomEngineStart(phantomConfigJSON(config)) {
+                    let alert = textAlertController(sharedContext: sharedContext, title: "Phantom", text: errorMessage, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
+                    presentControllerImpl?(alert, nil)
+                    return
+                }
+                phantomSavePersisted(config: config, enabled: true)
+                let _ = (phantomActivateLocalProxy(accountManager: accountManager) |> deliverOnMainQueue).start(completed: {
+                    dismissImpl?()
+                })
+                return
+            }
             if let proxyServerSettings = proxyServerSettings(with: state) {
                 let _ = (updateProxySettingsInteractively(accountManager: accountManager, { settings in
                     var settings = settings
@@ -366,6 +473,9 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
     }
     dismissImpl = { [weak controller] in
         let _ = controller?.dismiss()
+    }
+    presentControllerImpl = { [weak controller] c, a in
+        controller?.present(c, in: .window(.root), with: a)
     }
     shareImpl = { [weak controller] in
         let state = stateValue.with { $0 }

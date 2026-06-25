@@ -392,7 +392,7 @@ swift_library(
     deps = [
         "//submodules/TelegramUI:TelegramUI",
         "//third-party/boringssl:crypto",
-        "//third-party/Phantom:Phantom",
+        "//submodules/SettingsUI:SettingsUI",
     ],
 )
 
