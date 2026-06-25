@@ -1,0 +1,92 @@
+# Codemagic CI pipeline for the Telegram-iOS fork (Phantom proxy build).
+#
+# This builds a RE-SIGNABLE Telegram IPA using the in-repo self-signed
+# `build-system/fake-codesigning` material (the same path used by Telegram's
+# reproducible-build "verify" flow). The resulting IPA is signed with a
+# throwaway self-signed certificate and is meant to be RE-SIGNED by a sideload
+# tool (AltStore / SideStore / Sideloadly) with your own free 7-day Apple ID.
+#
+# Secrets: create a Codemagic environment variable GROUP named `telegram_api`
+# with two SECURE variables:
+#   TELEGRAM_API_ID    = <your api_id from my.telegram.org>
+#   TELEGRAM_API_HASH  = <your api_hash from my.telegram.org>
+# (They are injected into the generated build configuration; never committed.)
+#
+# NOTE: a cold Telegram-iOS Bazel build is very long. The bazel disk cache is
+# persisted across builds (see `cache:`), so re-runs resume much faster. If the
+# free tier's per-build time limit is hit, just re-run: cached actions are kept.
+
+workflows:
+  telegram-ios-ipa:
+    name: Telegram iOS (Phantom) IPA
+    # If `mac_mini_m2` is unavailable on your plan, try `mac_mini_m1`.
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    environment:
+      groups:
+        - telegram_api
+      vars:
+        GOTOOLCHAIN: auto
+      xcode: latest
+
+    cache:
+      cache_paths:
+        - ~/telegram-bazel-cache
+
+    scripts:
+      - name: Init submodules
+        script: |
+          set -euxo pipefail
+          git submodule update --init --recursive
+
+      - name: Install Bazel 8.4.2 (bazelisk)
+        script: |
+          set -euxo pipefail
+          brew install bazelisk || brew upgrade bazelisk || true
+          echo "8.4.2" > .bazelversion
+          bazelisk version || true
+
+      - name: Generate build configuration (api creds from env)
+        script: |
+          set -euo pipefail
+          if [ -z "${TELEGRAM_API_ID:-}" ] || [ -z "${TELEGRAM_API_HASH:-}" ]; then
+            echo "ERROR: set TELEGRAM_API_ID / TELEGRAM_API_HASH in the 'telegram_api' env group"
+            exit 1
+          fi
+          cat > phantom-build-configuration.json <<EOF
+          {
+            "bundle_id": "ph.telegra.Telegraph",
+            "api_id": "${TELEGRAM_API_ID}",
+            "api_hash": "${TELEGRAM_API_HASH}",
+            "team_id": "C67CF9S4VU",
+            "app_center_id": "0",
+            "is_internal_build": "true",
+            "is_appstore_build": "false",
+            "appstore_id": "0",
+            "app_specific_url_scheme": "tgapp",
+            "premium_iap_product_id": "",
+            "enable_siri": false,
+            "enable_icloud": false
+          }
+          EOF
+          echo "Generated configuration (api_hash redacted):"
+          sed 's/"api_hash".*/"api_hash": "<redacted>",/' phantom-build-configuration.json
+
+      - name: Build re-signable IPA (fake-codesigning)
+        script: |
+          set -euxo pipefail
+          python3 build-system/Make/Make.py \
+            --cacheDir="$HOME/telegram-bazel-cache" \
+            --bazel="$(which bazelisk)" \
+            --overrideBazelVersion \
+            --overrideXcodeVersion \
+            build \
+            --configurationPath=phantom-build-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --buildNumber=100001 \
+            --configuration=release_arm64 \
+            --outputBuildArtifactsPath=build/artifacts
+
+    artifacts:
+      - build/artifacts/Telegram.ipa
+      - build/artifacts/*.zip
