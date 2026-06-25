@@ -72,6 +72,13 @@ workflows:
           echo "Generated configuration (api_hash redacted):"
           sed 's/"api_hash".*/"api_hash": "<redacted>",/' phantom-build-configuration.json
 
+      - name: Install Metal toolchain (Xcode 16+/26 no longer bundles it)
+        script: |
+          set -euxo pipefail
+          # Telegram compiles Metal shaders (e.g. Drawing.metal). Recent Xcode
+          # ships the Metal toolchain as a separately downloadable component.
+          xcodebuild -downloadComponent MetalToolchain || sudo xcodebuild -downloadComponent MetalToolchain
+
       - name: Build re-signable IPA (fake-codesigning)
         script: |
           set -euxo pipefail
