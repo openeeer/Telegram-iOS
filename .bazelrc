@@ -39,3 +39,8 @@ common:index_build --noannounce_rc
 common:index_build --noshow_timestamps
 common:index_build --curses=no
 common:index_build --color=no
+
+# Disable bitcode (deprecated by Apple). This also makes rules_apple skip the
+# imported-dynamic-framework bitcode_strip step, which crashes on the Go-built
+# Phantom.framework binary ("string table not at the end of the file").
+build --apple_bitcode=none
