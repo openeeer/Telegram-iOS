@@ -39,12 +39,15 @@ workflows:
           set -euxo pipefail
           git submodule update --init --recursive
 
-      - name: Install Bazel 8.4.2 (bazelisk)
+      - name: Install Bazel 8.4.2 (bazelisk) + ccache
         script: |
           set -euxo pipefail
           brew install bazelisk || brew upgrade bazelisk || true
+          # ccache is used by TDLib's native CMake build (third-party/td).
+          brew install ccache || brew upgrade ccache || true
           echo "8.4.2" > .bazelversion
           bazelisk version || true
+          ccache --version || true
 
       - name: Generate build configuration (api creds from env)
         script: |

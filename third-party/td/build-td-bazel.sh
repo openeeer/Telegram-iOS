@@ -3,6 +3,13 @@
 set -e
 set -x
 
+# The bazel genrule that invokes this script runs with a restricted PATH
+# (`exec env -` + /usr/bin:/bin:...), which omits Homebrew. TDLib's CMake
+# detects `ccache` and sets it as RULE_LAUNCH_COMPILE by bare name, so make
+# later fails with "ccache: command not found". Put the common Homebrew/local
+# bin dirs back on PATH so ccache (and any other brew tools) resolve.
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
 ARCH="$1"
 
 SOURCE_DIR="$2"
