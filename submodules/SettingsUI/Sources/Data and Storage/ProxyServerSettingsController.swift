@@ -441,10 +441,16 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
                     let tunnel = logs.contains("tunnel established")
                     let proxying = logs.contains("proxying ")
                     let summary = "running=\(running) listen=\(listen) tunnel=\(tunnel) proxying=\(proxying)\n\n"
-                    let text = summary + (logs.isEmpty ? "(no engine output captured)" : String(logs.suffix(1300)))
-                    let alert = textAlertController(sharedContext: sharedContext, title: "Phantom log", text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
-                        dismissImpl?()
-                    })])
+                    let fullText = summary + (logs.isEmpty ? "(no engine output captured)" : logs)
+                    let shownText = summary + (logs.isEmpty ? "(no engine output captured)" : String(logs.suffix(1300)))
+                    let alert = textAlertController(sharedContext: sharedContext, title: "Phantom log", text: shownText, actions: [
+                        TextAlertAction(type: .genericAction, title: "Copy", action: {
+                            UIPasteboard.general.string = fullText
+                        }),
+                        TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
+                            dismissImpl?()
+                        })
+                    ])
                     presentControllerImpl?(alert, nil)
                 }
                 return
