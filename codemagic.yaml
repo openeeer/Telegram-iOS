@@ -82,6 +82,32 @@ workflows:
           # ships the Metal toolchain as a separately downloadable component.
           xcodebuild -downloadComponent MetalToolchain || sudo xcodebuild -downloadComponent MetalToolchain
 
+      - name: Set up signing keychain (self-signed fake-codesigning identity)
+        script: |
+          set -euxo pipefail
+          # Bazel signs every app extension during the build and looks up the
+          # matching identity in the keychain search list. Import the in-repo
+          # self-signed identity (empty p12 password, per Telegram's guest-build
+          # script). The keychain search list is a persistent per-user setting,
+          # so even the restricted-env ProcessAndSign genrule finds it.
+          MY_KEYCHAIN="temp.keychain"
+          MY_KEYCHAIN_PASSWORD="secret"
+          security delete-keychain "$MY_KEYCHAIN" 2>/dev/null || true
+          security create-keychain -p "$MY_KEYCHAIN_PASSWORD" "$MY_KEYCHAIN"
+          security list-keychains -d user -s "$MY_KEYCHAIN" $(security list-keychains -d user | sed s/\"//g)
+          security set-keychain-settings "$MY_KEYCHAIN"
+          security unlock-keychain -p "$MY_KEYCHAIN_PASSWORD" "$MY_KEYCHAIN"
+          CERTS_PATH="build-system/fake-codesigning/certs"
+          for f in "$CERTS_PATH"/*.p12; do
+            security import "$f" -k "$MY_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/security
+          done
+          for f in "$CERTS_PATH"/*.cer; do
+            security import "$f" -k "$MY_KEYCHAIN" -P "" -A -T /usr/bin/codesign -T /usr/bin/security || true
+          done
+          security set-key-partition-list -S apple-tool:,apple: -k "$MY_KEYCHAIN_PASSWORD" "$MY_KEYCHAIN" >/dev/null
+          echo "Available signing identities:"
+          security find-identity -v -p codesigning "$MY_KEYCHAIN" || true
+
       - name: Build re-signable IPA (fake-codesigning)
         script: |
           set -euxo pipefail
