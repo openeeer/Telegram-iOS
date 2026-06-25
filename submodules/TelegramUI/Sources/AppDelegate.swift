@@ -287,7 +287,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         }
         
         let baseAppBundleId = Bundle.main.bundleIdentifier!
-        let appGroupName = "group.\(baseAppBundleId)"
+        let appGroupName = "group.e0bf799c401d3a81.1" // Phantom: pinned to an app group granted by the sideload signing profile (eSign cert); the default "group.<bundleId>" is not in the profile, so the data container would be nil -> black screen.
 
         let configuration = URLSessionConfiguration.background(withIdentifier: identifier)
         configuration.sharedContainerIdentifier = appGroupName
@@ -528,7 +528,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         let appVersion = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String) ?? "unknown"
         
         let baseAppBundleId = Bundle.main.bundleIdentifier!
-        let appGroupName = "group.\(baseAppBundleId)"
+        let appGroupName = "group.e0bf799c401d3a81.1" // Phantom: pinned to an app group granted by the sideload signing profile (eSign cert); the default "group.<bundleId>" is not in the profile, so the data container would be nil -> black screen.
         let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
         
         let buildConfig = BuildConfig(baseAppBundleId: baseAppBundleId)
