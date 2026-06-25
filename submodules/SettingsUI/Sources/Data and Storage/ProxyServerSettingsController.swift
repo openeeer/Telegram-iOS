@@ -442,7 +442,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
                     let proxying = logs.contains("proxying ")
                     let summary = "running=\(running) listen=\(listen) tunnel=\(tunnel) proxying=\(proxying)\n\n"
                     let fullText = summary + (logs.isEmpty ? "(no engine output captured)" : logs)
-                    let shownText = summary + (logs.isEmpty ? "(no engine output captured)" : String(logs.suffix(1300)))
+                    let shownText = summary + "Tap “Copy” to copy the full engine log."
                     let alert = textAlertController(sharedContext: sharedContext, title: "Phantom log", text: shownText, actions: [
                         TextAlertAction(type: .genericAction, title: "Copy", action: {
                             UIPasteboard.general.string = fullText
