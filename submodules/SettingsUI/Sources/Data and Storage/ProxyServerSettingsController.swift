@@ -434,9 +434,14 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
                 // have had a few seconds to (try to) establish. iOS does not route
                 // a static Go binary's stderr to the system log, so this is the
                 // only way to see why the tunnel does/doesn't come up.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 9.0) {
                     let logs = phantomLogTail()
-                    let text = logs.isEmpty ? "(no engine output captured — PhantomStart may not have run)" : String(logs.suffix(1800))
+                    let running = phantomEngineIsRunning()
+                    let listen = logs.contains("SOCKS5 listening")
+                    let tunnel = logs.contains("tunnel established")
+                    let proxying = logs.contains("proxying ")
+                    let summary = "running=\(running) listen=\(listen) tunnel=\(tunnel) proxying=\(proxying)\n\n"
+                    let text = summary + (logs.isEmpty ? "(no engine output captured)" : String(logs.suffix(1300)))
                     let alert = textAlertController(sharedContext: sharedContext, title: "Phantom log", text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
                         dismissImpl?()
                     })])
