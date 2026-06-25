@@ -125,7 +125,7 @@ workflows:
             cd /tmp/phantom_way
             mkdir -p out/Headers
             CGO_ENABLED=1 GOOS=ios GOARCH=arm64 \
-              CC="$CLANG -arch arm64 -isysroot $SDK -mios-version-min=13.0" \
+              CC="$CLANG -arch arm64 -isysroot $SDK -miphoneos-version-min=13.0" \
               go build -buildmode=c-archive -o out/libphantom.a ./cmd/phantomcbridge
             cp out/libphantom.h out/Headers/libphantom.h
             printf 'module Phantom {\n    header "libphantom.h"\n    export *\n}\n' > out/Headers/module.modulemap
