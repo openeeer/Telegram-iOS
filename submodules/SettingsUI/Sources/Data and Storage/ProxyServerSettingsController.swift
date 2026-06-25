@@ -429,9 +429,19 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
                     return
                 }
                 phantomSavePersisted(config: config, enabled: true)
-                let _ = (phantomActivateLocalProxy(accountManager: accountManager) |> deliverOnMainQueue).start(completed: {
-                    dismissImpl?()
-                })
+                let _ = (phantomActivateLocalProxy(accountManager: accountManager) |> deliverOnMainQueue).start()
+                // Diagnostic: surface the engine's log tail on-device after tunnels
+                // have had a few seconds to (try to) establish. iOS does not route
+                // a static Go binary's stderr to the system log, so this is the
+                // only way to see why the tunnel does/doesn't come up.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) {
+                    let logs = phantomLogTail()
+                    let text = logs.isEmpty ? "(no engine output captured — PhantomStart may not have run)" : String(logs.suffix(1800))
+                    let alert = textAlertController(sharedContext: sharedContext, title: "Phantom log", text: text, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
+                        dismissImpl?()
+                    })])
+                    presentControllerImpl?(alert, nil)
+                }
                 return
             }
             if let proxyServerSettings = proxyServerSettings(with: state) {

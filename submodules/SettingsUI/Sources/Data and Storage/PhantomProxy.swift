@@ -88,6 +88,13 @@ func phantomEngineIsRunning() -> Bool {
     return PhantomIsRunning() != 0
 }
 
+/// Returns recent engine log output (on-device diagnostics).
+func phantomLogTail() -> String {
+    guard let res = PhantomLogTail() else { return "" }
+    defer { PhantomFreeString(res) }
+    return String(cString: res)
+}
+
 // MARK: - Persistence
 
 func phantomSavePersisted(config: PhantomProxyConfig, enabled: Bool) {
