@@ -1,0 +1,8 @@
+framework module "Phantom" {
+	header "ref.h"
+    header "Phantommobile.objc.h"
+    header "Universe.objc.h"
+    header "Phantom.h"
+
+    export *
+}
