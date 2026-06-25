@@ -1,0 +1,3 @@
+# Phantom.xcframework is generated at CI time (see /codemagic.yaml) from
+# github.com/openeeer/phantom_way. Do not commit the built binaries.
+/Phantom.xcframework/

@@ -108,6 +108,35 @@ workflows:
           echo "Available signing identities:"
           security find-identity -v -p codesigning "$MY_KEYCHAIN" || true
 
+      - name: Build Phantom static xcframework (from phantom_way)
+        script: |
+          set -euxo pipefail
+          # Build the Phantom proxy engine as a STATIC library and assemble it
+          # into third-party/Phantom/Phantom.xcframework BEFORE bazel runs, so
+          # //third-party/Phantom:Phantom (apple_static_xcframework_import) can
+          # glob it. Static linking avoids the dynamic-framework bitcode_strip
+          # that crashes on Go binaries.
+          brew install go || brew upgrade go || true
+          rm -rf /tmp/phantom_way
+          git clone --depth 1 https://github.com/openeeer/phantom_way.git /tmp/phantom_way
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          CLANG="$(xcrun --sdk iphoneos -f clang)"
+          (
+            cd /tmp/phantom_way
+            mkdir -p out/Headers
+            CGO_ENABLED=1 GOOS=ios GOARCH=arm64 \
+              CC="$CLANG -arch arm64 -isysroot $SDK -mios-version-min=13.0" \
+              go build -buildmode=c-archive -o out/libphantom.a ./cmd/phantomcbridge
+            cp out/libphantom.h out/Headers/libphantom.h
+            printf 'module Phantom {\n    header "libphantom.h"\n    export *\n}\n' > out/Headers/module.modulemap
+          )
+          rm -rf third-party/Phantom/Phantom.xcframework
+          xcodebuild -create-xcframework \
+            -library /tmp/phantom_way/out/libphantom.a \
+            -headers /tmp/phantom_way/out/Headers \
+            -output third-party/Phantom/Phantom.xcframework
+          ls -laR third-party/Phantom/Phantom.xcframework | head -40
+
       - name: Build re-signable IPA (fake-codesigning)
         script: |
           set -euxo pipefail
