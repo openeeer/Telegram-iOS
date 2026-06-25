@@ -15,7 +15,7 @@ import SwiftSignalKit
 //      Telegram's MTProto transport routes through the tunnel.
 
 public let phantomLocalSocksHost = "127.0.0.1"
-public let phantomLocalSocksPort: Int32 = 1080
+public let phantomLocalSocksPort: Int32 = 1081
 
 /// User-entered Phantom (reality) configuration.
 public struct PhantomProxyConfig: Codable, Equatable {
