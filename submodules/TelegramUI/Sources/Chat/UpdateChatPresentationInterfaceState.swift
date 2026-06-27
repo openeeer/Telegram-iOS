@@ -243,6 +243,11 @@ func updateChatPresentationInterfaceStateImpl(
         }
     }
     
+    // Quantgram: optionally suppress server-side link preview generation while composing.
+    if UserDefaults.standard.bool(forKey: "quantgram.disableLinkPreviews") {
+        canHaveUrlPreview = false
+    }
+    
     if canHaveUrlPreview, let (updatedUrlPreviewState, updatedUrlPreviewSignal) = urlPreviewStateForInputText(updatedChatPresentationInterfaceState.interfaceState.composeInputState.inputText, context: selfController.context, currentQuery: selfController.urlPreviewQueryState?.0, forPeerId: selfController.chatLocation.peerId) {
         selfController.urlPreviewQueryState?.1.dispose()
         var inScope = true
