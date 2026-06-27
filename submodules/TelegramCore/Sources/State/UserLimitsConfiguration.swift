@@ -153,7 +153,7 @@ extension UserLimitsConfiguration {
             }
         }
         
-        self.maxPinnedChatCount = getValue("dialogs_pinned_limit", orElse: defaultValue.maxPinnedChatCount)
+        self.maxPinnedChatCount = max(getValue("dialogs_pinned_limit", orElse: defaultValue.maxPinnedChatCount), 15)
         self.maxPinnedSavedChatCount = getValue("saved_dialogs_pinned_limit", orElse: defaultValue.maxPinnedSavedChatCount)
         self.maxArchivedPinnedChatCount = getValue("dialogs_folder_pinned_limit", orElse: defaultValue.maxArchivedPinnedChatCount)
         self.maxChannelsCount = getValue("channels_limit", orElse: defaultValue.maxChannelsCount)
