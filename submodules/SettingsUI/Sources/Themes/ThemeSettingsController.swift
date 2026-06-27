@@ -484,7 +484,8 @@ private func themeSettingsControllerEntries(
     
     if !availableAppIcons.isEmpty {
         entries.append(.iconHeader(presentationData.theme, strings.Appearance_AppIcon.uppercased()))
-        entries.append(.iconItem(presentationData.theme, presentationData.strings, availableAppIcons, isPremium, currentAppIconName))
+        // Quantgram: unlock all app icons regardless of Premium.
+        entries.append(.iconItem(presentationData.theme, presentationData.strings, availableAppIcons, true, currentAppIconName))
     }
     
     entries.append(.otherHeader(presentationData.theme, strings.Appearance_Other.uppercased()))
