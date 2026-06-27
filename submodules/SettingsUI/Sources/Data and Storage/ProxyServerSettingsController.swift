@@ -380,10 +380,11 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
     var initialPhantom: PhantomProxyConfig?
 
     if let currentSettings = currentSettings {
-        // Editing the local Phantom proxy entry: show it as Phantom with the
-        // saved reality parameters instead of a bare 127.0.0.1 SOCKS5 entry.
-        if phantomIsLocalProxy(currentSettings), let saved = phantomLoadConfig() {
-            initialPhantom = saved
+        // Editing the local Phantom proxy entry: always show it as Phantom (with
+        // the saved reality parameters if available), never as a bare 127.0.0.1
+        // SOCKS5 entry.
+        if phantomIsLocalProxy(currentSettings) {
+            initialPhantom = phantomLoadConfig()
             currentMode = .phantom
         } else {
             switch currentSettings.connection {
@@ -419,8 +420,8 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
 
     let initialState = ProxyServerSettingsControllerState(
         mode: currentMode,
-        host: initialPhantom != nil ? phantomHost : (currentSettings?.host ?? ""),
-        port: initialPhantom != nil ? phantomPort : ((currentSettings?.port).flatMap { "\($0)" } ?? ""),
+        host: currentMode == .phantom ? phantomHost : (currentSettings?.host ?? ""),
+        port: currentMode == .phantom ? phantomPort : ((currentSettings?.port).flatMap { "\($0)" } ?? ""),
         username: currentUsername ?? "",
         password: currentPassword ?? "",
         secret: initialPhantom?.secret ?? (currentSecret ?? ""),
