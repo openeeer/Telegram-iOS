@@ -95,6 +95,57 @@ func phantomLogTail() -> String {
     return String(cString: res)
 }
 
+// MARK: - Share link (phantom://) — interoperable with the desktop/server format
+// (internal/panel/share.go): "phantom://" + base64url(JSON{v,name,transport,
+// server,sni,reality_public,short_id,secret}).
+
+private struct phantomShareJSON: Codable {
+    var v: Int
+    var name: String?
+    var transport: String
+    var server: String
+    var sni: String
+    var reality_public: String?
+    var short_id: String?
+    var secret: String
+}
+
+private func phantomBase64urlEncode(_ data: Data) -> String {
+    return data.base64EncodedString()
+        .replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_")
+        .replacingOccurrences(of: "=", with: "")
+}
+
+private func phantomBase64urlDecode(_ s: String) -> Data? {
+    var str = s.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
+    let rem = str.count % 4
+    if rem > 0 {
+        str += String(repeating: "=", count: 4 - rem)
+    }
+    return Data(base64Encoded: str)
+}
+
+/// Builds a shareable phantom:// link from a config.
+func phantomShareLink(_ c: PhantomProxyConfig) -> String {
+    let sc = phantomShareJSON(v: 1, name: "Phantom", transport: "reality", server: c.remote, sni: c.sni, reality_public: c.realityPublicKey, short_id: c.realityShortId, secret: c.secret)
+    guard let data = try? JSONEncoder().encode(sc) else { return "" }
+    return "phantom://" + phantomBase64urlEncode(data)
+}
+
+/// Parses a phantom:// link into a config, or nil if not a valid link.
+func phantomParseShareLink(_ s: String) -> PhantomProxyConfig? {
+    let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard trimmed.hasPrefix("phantom://") else { return nil }
+    let b64 = String(trimmed.dropFirst("phantom://".count))
+    guard let data = phantomBase64urlDecode(b64),
+          let sc = try? JSONDecoder().decode(phantomShareJSON.self, from: data),
+          !sc.server.isEmpty else {
+        return nil
+    }
+    return PhantomProxyConfig(remote: sc.server, secret: sc.secret, sni: sc.sni, realityPublicKey: sc.reality_public ?? "", realityShortId: sc.short_id ?? "", vision: true, postQuantum: true, tlsFragment: true)
+}
+
 // MARK: - Persistence
 
 func phantomSavePersisted(config: PhantomProxyConfig, enabled: Bool) {
@@ -134,6 +185,23 @@ public func phantomApplyPersistedConfigAtLaunch() {
 /// The local SOCKS5 server that represents the running Phantom tunnel.
 func phantomLocalProxyServer() -> ProxyServerSettings {
     return ProxyServerSettings(host: phantomLocalSocksHost, port: phantomLocalSocksPort, connection: .socks5(username: nil, password: nil))
+}
+
+/// Reports whether the given proxy server is our local Phantom entry
+/// (127.0.0.1:<phantomLocalSocksPort> SOCKS5).
+func phantomIsLocalProxy(_ server: ProxyServerSettings) -> Bool {
+    guard server.host == phantomLocalSocksHost, server.port == phantomLocalSocksPort else {
+        return false
+    }
+    if case .socks5 = server.connection {
+        return true
+    }
+    return false
+}
+
+/// Returns the persisted Phantom config (reality params), if any.
+func phantomLoadConfig() -> PhantomProxyConfig? {
+    return phantomLoadPersisted()?.config
 }
 
 /// Adds (if missing) and activates the local SOCKS5 proxy in the account

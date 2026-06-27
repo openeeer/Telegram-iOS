@@ -11,16 +11,21 @@ import AccountContext
 import UrlEscaping
 import UrlHandling
 import QrCodeUI
+import ShareController
 
 private final class ProxyServerSettingsControllerArguments {
     let updateState: ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void
     let share: () -> Void
     let usePasteboardSettings: () -> Void
+    let importLink: () -> Void
+    let shareLink: () -> Void
     
-    init(updateState: @escaping ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void, share: @escaping () -> Void, usePasteboardSettings: @escaping () -> Void) {
+    init(updateState: @escaping ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void, share: @escaping () -> Void, usePasteboardSettings: @escaping () -> Void, importLink: @escaping () -> Void, shareLink: @escaping () -> Void) {
         self.updateState = updateState
         self.share = share
         self.usePasteboardSettings = usePasteboardSettings
+        self.importLink = importLink
+        self.shareLink = shareLink
     }
 }
 
@@ -50,12 +55,14 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     case credentialsPassword(PresentationTheme, PresentationStrings, String, String)
     case credentialsSecret(PresentationTheme, PresentationStrings, String, String)
     
+    case phantomImport(PresentationTheme, String)
     case phantomHeader(PresentationTheme, String)
     case phantomSecret(PresentationTheme, String, String)
     case phantomPublicKey(PresentationTheme, String, String)
     case phantomShortId(PresentationTheme, String, String)
     case phantomSni(PresentationTheme, String, String)
     case phantomInfo(PresentationTheme, String)
+    case phantomShareLink(PresentationTheme, String, Bool)
     
     case share(PresentationTheme, String, Bool)
     
@@ -69,7 +76,7 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return ProxySettingsSection.connection.rawValue
             case .credentialsHeader, .credentialsUsername, .credentialsPassword, .credentialsSecret:
                 return ProxySettingsSection.credentials.rawValue
-            case .phantomHeader, .phantomSecret, .phantomPublicKey, .phantomShortId, .phantomSni, .phantomInfo:
+            case .phantomImport, .phantomHeader, .phantomSecret, .phantomPublicKey, .phantomShortId, .phantomSni, .phantomInfo, .phantomShareLink:
                 return ProxySettingsSection.phantom.rawValue
             case .share:
                 return ProxySettingsSection.share.rawValue
@@ -102,20 +109,24 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return 10
             case .credentialsSecret:
                 return 11
-            case .phantomHeader:
+            case .phantomImport:
                 return 12
-            case .phantomSecret:
+            case .phantomHeader:
                 return 13
-            case .phantomPublicKey:
+            case .phantomSecret:
                 return 14
-            case .phantomShortId:
+            case .phantomPublicKey:
                 return 15
-            case .phantomSni:
+            case .phantomShortId:
                 return 16
-            case .phantomInfo:
+            case .phantomSni:
                 return 17
-            case .share:
+            case .phantomInfo:
                 return 18
+            case .phantomShareLink:
+                return 19
+            case .share:
+                return 20
         }
     }
     
@@ -200,6 +211,10 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                         return state
                     }
                 }, action: {})
+            case let .phantomImport(_, text):
+                return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                    arguments.importLink()
+                })
             case let .phantomHeader(_, text):
                 return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
             case let .phantomSecret(_, placeholder, text):
@@ -236,6 +251,10 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 }, action: {})
             case let .phantomInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+            case let .phantomShareLink(_, text, enabled):
+                return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: enabled ? .generic : .disabled, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                    arguments.shareLink()
+                })
             case let .share(_, text, enabled):
                 return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: enabled ? .generic : .disabled, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                     arguments.share()
@@ -285,6 +304,10 @@ private struct ProxyServerSettingsControllerState: Equatable {
     }
 }
 
+private func phantomConfig(from state: ProxyServerSettingsControllerState) -> PhantomProxyConfig {
+    return PhantomProxyConfig(remote: "\(state.host):\(state.port)", secret: state.secret, sni: state.sni, realityPublicKey: state.realityPublicKey, realityShortId: state.realityShortId, vision: true, postQuantum: true, tlsFragment: true)
+}
+
 private func proxyServerSettingsControllerEntries(presentationData: PresentationData, state: ProxyServerSettingsControllerState, pasteboardSettings: ProxyServerSettings?) -> [ProxySettingsEntry] {
     var entries: [ProxySettingsEntry] = []
     
@@ -309,12 +332,14 @@ private func proxyServerSettingsControllerEntries(presentationData: Presentation
             entries.append(.credentialsHeader(presentationData.theme, presentationData.strings.SocksProxySetup_RequiredCredentials))
             entries.append(.credentialsSecret(presentationData.theme, presentationData.strings, presentationData.strings.SocksProxySetup_SecretPlaceholder, state.secret))
         case .phantom:
+            entries.append(.phantomImport(presentationData.theme, "Import from clipboard link"))
             entries.append(.phantomHeader(presentationData.theme, "PHANTOM (REALITY)"))
             entries.append(.phantomSecret(presentationData.theme, "Secret (hex)", state.secret))
             entries.append(.phantomPublicKey(presentationData.theme, "Reality public key", state.realityPublicKey))
             entries.append(.phantomShortId(presentationData.theme, "Reality short id", state.realityShortId))
             entries.append(.phantomSni(presentationData.theme, "SNI", state.sni))
             entries.append(.phantomInfo(presentationData.theme, "Phantom runs locally and routes Telegram through 127.0.0.1:\(phantomLocalSocksPort). Server is host:port above; SNI must match the reality dest."))
+            entries.append(.phantomShareLink(presentationData.theme, "Share connection link", state.isComplete))
     }
     
     if state.mode != .phantom {
@@ -352,15 +377,24 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
     var currentPassword: String?
     var currentSecret: String?
     var pasteboardSettings: ProxyServerSettings?
+    var initialPhantom: PhantomProxyConfig?
+
     if let currentSettings = currentSettings {
-        switch currentSettings.connection {
-            case let .socks5(username, password):
-                currentUsername = username
-                currentPassword = password
-                currentMode = .socks5
-            case let .mtp(secret):
-                currentSecret = hexString(secret)
-                currentMode = .mtp
+        // Editing the local Phantom proxy entry: show it as Phantom with the
+        // saved reality parameters instead of a bare 127.0.0.1 SOCKS5 entry.
+        if phantomIsLocalProxy(currentSettings), let saved = phantomLoadConfig() {
+            initialPhantom = saved
+            currentMode = .phantom
+        } else {
+            switch currentSettings.connection {
+                case let .socks5(username, password):
+                    currentUsername = username
+                    currentPassword = password
+                    currentMode = .socks5
+                case let .mtp(secret):
+                    currentSecret = hexString(secret)
+                    currentMode = .mtp
+            }
         }
     } else {
         if let proxy = parseProxyUrl(sharedContext: sharedContext, url: UIPasteboard.general.string ?? "") {
@@ -372,7 +406,28 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         }
     }
 
-    let initialState = ProxyServerSettingsControllerState(mode: currentMode, host: currentSettings?.host ?? "", port: (currentSettings?.port).flatMap { "\($0)" } ?? "", username: currentUsername ?? "", password: currentPassword ?? "", secret: currentSecret ?? "", realityPublicKey: "", realityShortId: "", sni: "")
+    var phantomHost = ""
+    var phantomPort = ""
+    if let p = initialPhantom {
+        if let idx = p.remote.lastIndex(of: ":") {
+            phantomHost = String(p.remote[..<idx])
+            phantomPort = String(p.remote[p.remote.index(after: idx)...])
+        } else {
+            phantomHost = p.remote
+        }
+    }
+
+    let initialState = ProxyServerSettingsControllerState(
+        mode: currentMode,
+        host: initialPhantom != nil ? phantomHost : (currentSettings?.host ?? ""),
+        port: initialPhantom != nil ? phantomPort : ((currentSettings?.port).flatMap { "\($0)" } ?? ""),
+        username: currentUsername ?? "",
+        password: currentPassword ?? "",
+        secret: initialPhantom?.secret ?? (currentSecret ?? ""),
+        realityPublicKey: initialPhantom?.realityPublicKey ?? "",
+        realityShortId: initialPhantom?.realityShortId ?? "",
+        sni: initialPhantom?.sni ?? ""
+    )
     let stateValue = Atomic(value: initialState)
     let statePromise = ValuePromise(initialState, ignoreRepeated: true)
     let updateState: ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void = { f in
@@ -384,6 +439,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
     var presentControllerImpl: ((ViewController, ViewControllerPresentationArguments?) -> Void)?
     
     var shareImpl: (() -> Void)?
+    var shareLinkImpl: (() -> Void)?
     
     let arguments = ProxyServerSettingsControllerArguments(updateState: { f in
         updateState(f)
@@ -407,6 +463,30 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
                 return state
             }
         }
+    }, importLink: {
+        let clip = UIPasteboard.general.string ?? ""
+        if let cfg = phantomParseShareLink(clip) {
+            updateState { state in
+                var state = state
+                state.mode = .phantom
+                if let idx = cfg.remote.lastIndex(of: ":") {
+                    state.host = String(cfg.remote[..<idx])
+                    state.port = String(cfg.remote[cfg.remote.index(after: idx)...])
+                } else {
+                    state.host = cfg.remote
+                }
+                state.secret = cfg.secret
+                state.realityPublicKey = cfg.realityPublicKey
+                state.realityShortId = cfg.realityShortId
+                state.sni = cfg.sni
+                return state
+            }
+        } else {
+            let alert = textAlertController(sharedContext: sharedContext, title: "Phantom", text: "No valid phantom:// link found in the clipboard.", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
+            presentControllerImpl?(alert, nil)
+        }
+    }, shareLink: {
+        shareLinkImpl?()
     })
     
     let signal = combineLatest(updatedPresentationData, statePromise.get())
@@ -421,7 +501,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         })
         let rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: state.isComplete, action: {
             if state.mode == .phantom {
-                let config = PhantomProxyConfig(remote: "\(state.host):\(state.port)", secret: state.secret, sni: state.sni, realityPublicKey: state.realityPublicKey, realityShortId: state.realityShortId, vision: true, postQuantum: true, tlsFragment: true)
+                let config = phantomConfig(from: state)
                 phantomEngineStop()
                 if let errorMessage = phantomEngineStart(phantomConfigJSON(config)) {
                     let alert = textAlertController(sharedContext: sharedContext, title: "Phantom", text: errorMessage, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
@@ -429,30 +509,9 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
                     return
                 }
                 phantomSavePersisted(config: config, enabled: true)
-                let _ = (phantomActivateLocalProxy(accountManager: accountManager) |> deliverOnMainQueue).start()
-                // Diagnostic: surface the engine's log tail on-device after tunnels
-                // have had a few seconds to (try to) establish. iOS does not route
-                // a static Go binary's stderr to the system log, so this is the
-                // only way to see why the tunnel does/doesn't come up.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 9.0) {
-                    let logs = phantomLogTail()
-                    let running = phantomEngineIsRunning()
-                    let listen = logs.contains("SOCKS5 listening")
-                    let tunnel = logs.contains("tunnel established")
-                    let proxying = logs.contains("proxying ")
-                    let summary = "running=\(running) listen=\(listen) tunnel=\(tunnel) proxying=\(proxying)\n\n"
-                    let fullText = summary + (logs.isEmpty ? "(no engine output captured)" : logs)
-                    let shownText = summary + "Tap “Copy” to copy the full engine log."
-                    let alert = textAlertController(sharedContext: sharedContext, title: "Phantom log", text: shownText, actions: [
-                        TextAlertAction(type: .genericAction, title: "Copy", action: {
-                            UIPasteboard.general.string = fullText
-                        }),
-                        TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {
-                            dismissImpl?()
-                        })
-                    ])
-                    presentControllerImpl?(alert, nil)
-                }
+                let _ = (phantomActivateLocalProxy(accountManager: accountManager) |> deliverOnMainQueue).start(completed: {
+                    dismissImpl?()
+                })
                 return
             }
             if let proxyServerSettings = proxyServerSettings(with: state) {
@@ -511,6 +570,22 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
             subject: .proxy(server: server, externalLink: false)
         )
         pushControllerImpl?(controller)
+    }
+    shareLinkImpl = { [weak controller] in
+        let state = stateValue.with { $0 }
+        guard state.isComplete else {
+            return
+        }
+        let link = phantomShareLink(phantomConfig(from: state))
+        controller?.view.endEditing(true)
+        if let context = context {
+            let shareController = context.sharedContext.makeShareController(context: context, params: ShareControllerParams(subject: .text(link), externalShare: true))
+            presentControllerImpl?(shareController, nil)
+        } else {
+            UIPasteboard.general.string = link
+            let alert = textAlertController(sharedContext: sharedContext, title: "Phantom", text: "Connection link copied to clipboard.", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
+            presentControllerImpl?(alert, nil)
+        }
     }
     
     return controller
