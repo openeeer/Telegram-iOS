@@ -106,4 +106,22 @@
         <key>UIPrerenderedIcon</key>
         <true/>
     </dict>
+    <key>QuantgramDark</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>QuantgramDark</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
+    <key>QuantgramSky</key>
+    <dict>
+        <key>CFBundleIconFiles</key>
+        <array>
+            <string>QuantgramSky</string>
+        </array>
+        <key>UIPrerenderedIcon</key>
+        <true/>
+    </dict>
 </dict>

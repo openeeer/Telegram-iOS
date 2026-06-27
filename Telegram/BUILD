@@ -324,6 +324,8 @@ alternate_icon_folders = [
     "BlueClassicIcon",
     "BlueFilledIcon",
     "WhiteFilledIcon",
+    "QuantgramDark",
+    "QuantgramSky",
     "New1",
     "New2",
     "Premium",
