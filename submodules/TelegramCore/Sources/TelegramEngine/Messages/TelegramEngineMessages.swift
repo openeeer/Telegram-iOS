@@ -98,6 +98,9 @@ public extension TelegramEngine {
         }
 
         public func applyMaxReadIndexInteractively(index: MessageIndex) -> Signal<Void, NoError> {
+            if QuantgramGhostRead.shouldSuppressRead(index.id.peerId) {
+                return .complete()
+            }
             return _internal_applyMaxReadIndexInteractively(postbox: self.account.postbox, stateManager: self.account.stateManager, index: index)
         }
 
