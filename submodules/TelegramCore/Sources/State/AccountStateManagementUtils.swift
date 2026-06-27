@@ -5015,7 +5015,7 @@ func replayFinalState(
                                     var currentItemIds = transaction.getPinnedItemIds(groupId: groupId)
                                     if !currentItemIds.contains(.peer(peerId)) {
                                         currentItemIds.insert(.peer(peerId), at: 0)
-                                        transaction.setPinnedItemIds(groupId: groupId, itemIds: currentItemIds)
+                                        quantgramApplyServerPinnedItemIds(transaction: transaction, groupId: groupId, itemIds: currentItemIds)
                                     }
                                 }
                         }
@@ -5025,7 +5025,7 @@ func replayFinalState(
                                 var currentItemIds = transaction.getPinnedItemIds(groupId: groupId)
                                 if let index = currentItemIds.firstIndex(of: .peer(peerId)) {
                                     currentItemIds.remove(at: index)
-                                    transaction.setPinnedItemIds(groupId: groupId, itemIds: currentItemIds)
+                                    quantgramApplyServerPinnedItemIds(transaction: transaction, groupId: groupId, itemIds: currentItemIds)
                                 } else {
                                     addSynchronizePinnedChatsOperation(transaction: transaction, groupId: groupId)
                                 }
@@ -5033,7 +5033,7 @@ func replayFinalState(
                     case let .reorder(itemIds):
                         let currentItemIds = transaction.getPinnedItemIds(groupId: groupId)
                         if Set(itemIds) == Set(currentItemIds) {
-                            transaction.setPinnedItemIds(groupId: groupId, itemIds: itemIds)
+                            quantgramApplyServerPinnedItemIds(transaction: transaction, groupId: groupId, itemIds: itemIds)
                         } else {
                             addSynchronizePinnedChatsOperation(transaction: transaction, groupId: groupId)
                         }

@@ -49,7 +49,7 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
             }
             
             let count = sameKind.count + additionalCount
-            if count > limitCount, itemIds.firstIndex(of: itemId) == nil {
+            if count > limitCount, !QuantgramLocalPins.isEnabled, itemIds.firstIndex(of: itemId) == nil {
                 return .limitExceeded(count: sameKind.count, limit: limitCount)
             } else {
                 if let index = itemIds.firstIndex(of: itemId) {
@@ -57,7 +57,9 @@ func _internal_toggleItemPinned(postbox: Postbox, accountPeerId: PeerId, locatio
                 } else {
                     itemIds.insert(itemId, at: 0)
                 }
-                addSynchronizePinnedChatsOperation(transaction: transaction, groupId: groupId)
+                if !QuantgramLocalPins.isEnabled {
+                    addSynchronizePinnedChatsOperation(transaction: transaction, groupId: groupId)
+                }
                 transaction.setPinnedItemIds(groupId: groupId, itemIds: itemIds)
                 return .done
             }
@@ -111,7 +113,9 @@ func _internal_reorderPinnedItemIds(transaction: Transaction, location: TogglePe
     case let .group(groupId):
         if transaction.getPinnedItemIds(groupId: groupId) != itemIds {
             transaction.setPinnedItemIds(groupId: groupId, itemIds: itemIds)
-            addSynchronizePinnedChatsOperation(transaction: transaction, groupId: groupId)
+            if !QuantgramLocalPins.isEnabled {
+                addSynchronizePinnedChatsOperation(transaction: transaction, groupId: groupId)
+            }
             return true
         } else {
             return false

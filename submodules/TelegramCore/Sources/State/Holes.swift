@@ -1263,7 +1263,7 @@ func fetchChatListHole(postbox: Postbox, network: Network, accountPeerId: PeerId
             }
             
             if let replacePinnedItemIds = fetchedChats.pinnedItemIds {
-                transaction.setPinnedItemIds(groupId: groupId, itemIds: replacePinnedItemIds.map(PinnedItemId.peer))
+                quantgramApplyServerPinnedItemIds(transaction: transaction, groupId: groupId, itemIds: replacePinnedItemIds.map(PinnedItemId.peer))
             }
             
             for (peerId, summary) in fetchedChats.mentionTagSummaries {

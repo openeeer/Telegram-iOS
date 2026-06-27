@@ -220,7 +220,7 @@ private func synchronizePinnedChats(transaction: Transaction, postbox: Postbox, 
             return postbox.transaction { transaction -> Signal<Void, NoError> in
                 updatePeers(transaction: transaction, accountPeerId: accountPeerId, peers: parsedPeers)
                 
-                transaction.setPinnedItemIds(groupId: groupId, itemIds: resultingItemIds)
+                quantgramApplyServerPinnedItemIds(transaction: transaction, groupId: groupId, itemIds: resultingItemIds)
                 
                 transaction.updateCurrentPeerNotificationSettings(notificationSettings)
                 
