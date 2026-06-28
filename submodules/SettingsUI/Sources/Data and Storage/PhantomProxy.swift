@@ -1,5 +1,6 @@
 import Foundation
 import UIKit
+import Network
 import Phantom
 import TelegramCore
 import SwiftSignalKit
@@ -46,7 +47,7 @@ private let phantomConfigKey = "phantom.config.v1"
 
 /// Serializes the config into the JSON schema expected by the engine
 /// (phantom/mobile Config). The local SOCKS5 address is injected here.
-func phantomConfigJSON(_ c: PhantomProxyConfig) -> String {
+public func phantomConfigJSON(_ c: PhantomProxyConfig) -> String {
     let dict: [String: Any] = [
         "remote": c.remote,
         "transport": "reality",
@@ -69,7 +70,7 @@ func phantomConfigJSON(_ c: PhantomProxyConfig) -> String {
 /// Starts the engine with the given JSON config. Returns nil on success or the
 /// error message on failure. Idempotent (the engine refuses a double start).
 @discardableResult
-func phantomEngineStart(_ json: String) -> String? {
+public func phantomEngineStart(_ json: String) -> String? {
     return json.withCString { cs -> String? in
         guard let res = PhantomStart(UnsafeMutablePointer(mutating: cs)) else {
             return nil
@@ -94,6 +95,41 @@ func phantomLogTail() -> String {
     guard let res = PhantomLogTail() else { return "" }
     defer { PhantomFreeString(res) }
     return String(cString: res)
+}
+
+/// Measures the TCP connect time (ms) to host:port, e.g. to show the latency of
+/// a Phantom server before connecting. Calls completion on the main queue with
+/// the round-trip in milliseconds, or nil if unreachable within the timeout.
+public func phantomMeasurePing(host: String, port: UInt16, completion: @escaping (Int?) -> Void) {
+    guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+        DispatchQueue.main.async { completion(nil) }
+        return
+    }
+    let connection = NWConnection(host: NWEndpoint.Host(host), port: nwPort, using: .tcp)
+    let start = Date()
+    var finished = false
+    let finish: (Int?) -> Void = { ms in
+        if finished {
+            return
+        }
+        finished = true
+        connection.cancel()
+        DispatchQueue.main.async { completion(ms) }
+    }
+    connection.stateUpdateHandler = { state in
+        switch state {
+        case .ready:
+            finish(Int(Date().timeIntervalSince(start) * 1000.0))
+        case .failed, .cancelled:
+            finish(nil)
+        default:
+            break
+        }
+    }
+    connection.start(queue: DispatchQueue.global(qos: .userInitiated))
+    DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+        finish(nil)
+    }
 }
 
 // MARK: - Share link (phantom://) — interoperable with the desktop/server format
@@ -135,7 +171,7 @@ func phantomShareLink(_ c: PhantomProxyConfig) -> String {
 }
 
 /// Parses a phantom:// link into a config, or nil if not a valid link.
-func phantomParseShareLink(_ s: String) -> PhantomProxyConfig? {
+public func phantomParseShareLink(_ s: String) -> PhantomProxyConfig? {
     let trimmed = s.trimmingCharacters(in: .whitespacesAndNewlines)
     guard trimmed.hasPrefix("phantom://") else { return nil }
     let b64 = String(trimmed.dropFirst("phantom://".count))
@@ -149,7 +185,7 @@ func phantomParseShareLink(_ s: String) -> PhantomProxyConfig? {
 
 // MARK: - Persistence
 
-func phantomSavePersisted(config: PhantomProxyConfig, enabled: Bool) {
+public func phantomSavePersisted(config: PhantomProxyConfig, enabled: Bool) {
     let defaults = UserDefaults.standard
     if let data = try? JSONEncoder().encode(config), let s = String(data: data, encoding: .utf8) {
         defaults.set(s, forKey: phantomConfigKey)
@@ -309,7 +345,7 @@ func phantomLoadConfig() -> PhantomProxyConfig? {
 
 /// Adds (if missing) and activates the local SOCKS5 proxy in the account
 /// manager's proxy settings, enabling proxying.
-func phantomActivateLocalProxy(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<Bool, NoError> {
+public func phantomActivateLocalProxy(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<Bool, NoError> {
     let server = phantomLocalProxyServer()
     return updateProxySettingsInteractively(accountManager: accountManager, { settings in
         var settings = settings

@@ -13,6 +13,7 @@ import OpenInExternalAppUI
 import BrowserUI
 import OverlayStatusController
 import PresentationDataUtils
+import SettingsUI
 
 public struct ParsedSecureIdUrl {
     public let peerId: EnginePeer.Id
@@ -361,7 +362,35 @@ private func makeTelegramUrl(_ path: String, queryItems: [URLQueryItem] = []) ->
     return appendQueryItems(to: "https://t.me\(path)", items: queryItems)
 }
 
+private func phantomPresentAddFromLink(context: AccountContext, config: PhantomProxyConfig) {
+    var host = config.remote
+    var port: UInt16 = 443
+    if let idx = config.remote.lastIndex(of: ":") {
+        host = String(config.remote[..<idx])
+        if let parsedPort = UInt16(config.remote[config.remote.index(after: idx)...]) {
+            port = parsedPort
+        }
+    }
+    phantomMeasurePing(host: host, port: port, completion: { pingMs in
+        let pingText = pingMs.map { "\($0) мс" } ?? "недоступен"
+        let text = "Сервер: \(config.remote)\nSNI: \(config.sni)\nПинг: \(pingText)\n\nДобавить и подключить этот Phantom-прокси?"
+        let controller = textAlertController(context: context, title: "Phantom", text: text, actions: [
+            TextAlertAction(type: .genericAction, title: "Отмена", action: {}),
+            TextAlertAction(type: .defaultAction, title: "Подключить", action: {
+                phantomSavePersisted(config: config, enabled: true)
+                _ = phantomEngineStart(phantomConfigJSON(config))
+                let _ = phantomActivateLocalProxy(accountManager: context.sharedContext.accountManager).start()
+            })
+        ])
+        context.sharedContext.presentGlobalController(controller, nil)
+    })
+}
+
 func openExternalUrlImpl(context: AccountContext, urlContext: OpenURLContext, url: String, forceExternal: Bool, presentationData: PresentationData, navigationController: NavigationController?, dismissInput: @escaping () -> Void) {
+    if url.lowercased().hasPrefix("phantom://"), let phantomConfig = phantomParseShareLink(url) {
+        phantomPresentAddFromLink(context: context, config: phantomConfig)
+        return
+    }
     if forceExternal || url.lowercased().hasPrefix("tel:") || url.lowercased().hasPrefix("calshow:") {
         if url.lowercased().hasPrefix("tel:+888") {
             context.sharedContext.presentGlobalController(textAlertController(context: context, title: nil, text: presentationData.strings.Conversation_CantPhoneCallAnonymousNumberError, actions: [

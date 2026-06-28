@@ -251,6 +251,32 @@ public func generateChatInputTextEntities(_ text: NSAttributedString, maxAnimate
     return entities
 }
 
+// Quantgram: detect phantom:// share links as tappable URL entities (the system
+// NSDataDetector does not recognise custom schemes).
+private let phantomLinkRegex = try? NSRegularExpression(pattern: "phantom://[A-Za-z0-9_\\-=]+", options: [])
+private func addPhantomLinkEntities(_ text: String, _ entities: inout [MessageTextEntity]) {
+    guard text.range(of: "phantom://") != nil, let regex = phantomLinkRegex else {
+        return
+    }
+    let nsRange = NSRange(location: 0, length: text.utf16.count)
+    regex.enumerateMatches(in: text, options: [], range: nsRange, using: { result, _, _ in
+        guard let result = result else {
+            return
+        }
+        let indexRange: Range<Int> = result.range.location ..< (result.range.location + result.range.length)
+        var overlaps = false
+        for entity in entities {
+            if entity.range.overlaps(indexRange) {
+                overlaps = true
+                break
+            }
+        }
+        if !overlaps {
+            entities.append(MessageTextEntity(range: indexRange, type: .Url))
+        }
+    })
+}
+
 public func generateTextEntities(_ text: String, enabledTypes: EnabledEntityTypes, currentEntities: [MessageTextEntity] = []) -> [MessageTextEntity] {
     var entities: [MessageTextEntity] = currentEntities
     
@@ -381,11 +407,17 @@ public func generateTextEntities(_ text: String, enabledTypes: EnabledEntityType
         commitEntity(utf16, type, range, enabledTypes, &entities)
     }
     
+    if enabledTypes.contains(.allUrl) || enabledTypes.contains(.internalUrl) {
+        addPhantomLinkEntities(text, &entities)
+    }
+    
     return entities
 }
 
 public func addLocallyGeneratedEntities(_ text: String, enabledTypes: EnabledEntityTypes, entities: [MessageTextEntity], mediaDuration: Double? = nil) -> [MessageTextEntity]? {
     var resultEntities = entities
+    
+    addPhantomLinkEntities(text, &resultEntities)
     
     var hasDigits = false
     var hasColons = false
