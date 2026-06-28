@@ -430,6 +430,10 @@ final class PeerInfoScreenData {
     let _isContact: Bool
     var forceIsContact: Bool = false
 
+    // Quantgram: message counts (total + per-member), populated after init.
+    var messageCount: Int? = nil
+    var memberMessageCounts: [EnginePeer.Id: Int]? = nil
+
     var isContact: Bool {
         if self.forceIsContact {
             return true

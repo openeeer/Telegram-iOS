@@ -16,6 +16,8 @@ public struct QuantgramSettings {
     private static let pinsSeededKey = "quantgram.pinsSeeded"
     private static let disableLinkPreviewsKey = "quantgram.disableLinkPreviews"
     private static let disableSwipeCameraKey = "quantgram.disableSwipeCamera"
+    private static let showMessageCountKey = "quantgram.showMessageCount"
+    private static let showPerMemberCountKey = "quantgram.showPerMemberCount"
 
     /// "Read without read receipt": incoming messages are marked read only after
     /// the user sends a reply in the chat.
@@ -31,14 +33,13 @@ public struct QuantgramSettings {
         set {
             UserDefaults.standard.set(newValue, forKey: localPinsKey)
             if newValue {
-                // Re-seed from the server once after (re)enabling.
                 UserDefaults.standard.set(false, forKey: pinsSeededKey)
             }
         }
     }
 
-    /// "Disable link preview generation": don't request a web page preview from
-    /// the server while composing, and strip previews from outgoing messages.
+    /// "Disable link preview generation": don't request a web page preview while
+    /// composing, and strip previews from outgoing messages.
     public static var disableLinkPreviews: Bool {
         get { return UserDefaults.standard.bool(forKey: disableLinkPreviewsKey) }
         set { UserDefaults.standard.set(newValue, forKey: disableLinkPreviewsKey) }
@@ -50,6 +51,20 @@ public struct QuantgramSettings {
         get { return UserDefaults.standard.bool(forKey: disableSwipeCameraKey) }
         set { UserDefaults.standard.set(newValue, forKey: disableSwipeCameraKey) }
     }
+
+    /// "Show message count": display the total number of messages in a chat on
+    /// the profile screen.
+    public static var showMessageCount: Bool {
+        get { return UserDefaults.standard.bool(forKey: showMessageCountKey) }
+        set { UserDefaults.standard.set(newValue, forKey: showMessageCountKey) }
+    }
+
+    /// "Show per-member message count" (groups): display each member's message
+    /// count under the members block.
+    public static var showPerMemberCount: Bool {
+        get { return UserDefaults.standard.bool(forKey: showPerMemberCountKey) }
+        set { UserDefaults.standard.set(newValue, forKey: showPerMemberCountKey) }
+    }
 }
 
 private struct QuantgramState: Equatable {
@@ -57,10 +72,12 @@ private struct QuantgramState: Equatable {
     var localPins: Bool
     var disableLinkPreviews: Bool
     var disableSwipeCamera: Bool
+    var showMessageCount: Bool
+    var showPerMemberCount: Bool
 }
 
 private func currentQuantgramState() -> QuantgramState {
-    return QuantgramState(ghostRead: QuantgramSettings.ghostRead, localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera)
+    return QuantgramState(ghostRead: QuantgramSettings.ghostRead, localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount, showPerMemberCount: QuantgramSettings.showPerMemberCount)
 }
 
 private final class QuantgramAdvancedArguments {
@@ -68,11 +85,15 @@ private final class QuantgramAdvancedArguments {
     let toggleLocalPins: (Bool) -> Void
     let toggleDisableLinkPreviews: (Bool) -> Void
     let toggleDisableSwipeCamera: (Bool) -> Void
-    init(toggleGhostRead: @escaping (Bool) -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void) {
+    let toggleShowMessageCount: (Bool) -> Void
+    let toggleShowPerMemberCount: (Bool) -> Void
+    init(toggleGhostRead: @escaping (Bool) -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void, toggleShowPerMemberCount: @escaping (Bool) -> Void) {
         self.toggleGhostRead = toggleGhostRead
         self.toggleLocalPins = toggleLocalPins
         self.toggleDisableLinkPreviews = toggleDisableLinkPreviews
         self.toggleDisableSwipeCamera = toggleDisableSwipeCamera
+        self.toggleShowMessageCount = toggleShowMessageCount
+        self.toggleShowPerMemberCount = toggleShowPerMemberCount
     }
 }
 
@@ -81,6 +102,7 @@ private enum QuantgramSection: Int32 {
     case pins
     case links
     case camera
+    case messages
 }
 
 private enum QuantgramEntry: ItemListNodeEntry {
@@ -92,6 +114,10 @@ private enum QuantgramEntry: ItemListNodeEntry {
     case disableLinkPreviewsInfo(PresentationTheme, String)
     case disableSwipeCamera(PresentationTheme, String, Bool)
     case disableSwipeCameraInfo(PresentationTheme, String)
+    case showMessageCount(PresentationTheme, String, Bool)
+    case showMessageCountInfo(PresentationTheme, String)
+    case showPerMemberCount(PresentationTheme, String, Bool)
+    case showPerMemberCountInfo(PresentationTheme, String)
 
     var section: ItemListSectionId {
         switch self {
@@ -103,6 +129,8 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 return QuantgramSection.links.rawValue
             case .disableSwipeCamera, .disableSwipeCameraInfo:
                 return QuantgramSection.camera.rawValue
+            case .showMessageCount, .showMessageCountInfo, .showPerMemberCount, .showPerMemberCountInfo:
+                return QuantgramSection.messages.rawValue
         }
     }
 
@@ -124,6 +152,14 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 return 6
             case .disableSwipeCameraInfo:
                 return 7
+            case .showMessageCount:
+                return 8
+            case .showMessageCountInfo:
+                return 9
+            case .showPerMemberCount:
+                return 10
+            case .showPerMemberCountInfo:
+                return 11
         }
     }
 
@@ -158,6 +194,18 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 })
             case let .disableSwipeCameraInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+            case let .showMessageCount(_, text, value):
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
+                    arguments.toggleShowMessageCount(value)
+                })
+            case let .showMessageCountInfo(_, text):
+                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+            case let .showPerMemberCount(_, text, value):
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
+                    arguments.toggleShowPerMemberCount(value)
+                })
+            case let .showPerMemberCountInfo(_, text):
+                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         }
     }
 }
@@ -172,6 +220,10 @@ private func quantgramAdvancedEntries(presentationData: PresentationData, state:
     entries.append(.disableLinkPreviewsInfo(presentationData.theme, "Превью ссылок не запрашивается с сервера при наборе и не прикрепляется к вашим отправленным сообщениям — меньше трафика и следов."))
     entries.append(.disableSwipeCamera(presentationData.theme, "Не открывать камеру свайпом", state.disableSwipeCamera))
     entries.append(.disableSwipeCameraInfo(presentationData.theme, "Свайп по списку чатов больше не открывает камеру историй. Переключение папок свайпом продолжает работать."))
+    entries.append(.showMessageCount(presentationData.theme, "Показывать количество сообщений", state.showMessageCount))
+    entries.append(.showMessageCountInfo(presentationData.theme, "В профиле чата (ЛС и группы) показывается общее число сообщений в переписке."))
+    entries.append(.showPerMemberCount(presentationData.theme, "Сообщения по участникам (группы)", state.showPerMemberCount))
+    entries.append(.showPerMemberCountInfo(presentationData.theme, "Под блоком участников группы показывается число сообщений каждого участника. Для больших групп учитываются первые 50 участников (чтобы не упереться в лимиты сервера)."))
     return entries
 }
 
@@ -191,6 +243,12 @@ public func quantgramAdvancedController(context: AccountContext) -> ViewControll
         statePromise.set(currentQuantgramState())
     }, toggleDisableSwipeCamera: { value in
         QuantgramSettings.disableSwipeCamera = value
+        statePromise.set(currentQuantgramState())
+    }, toggleShowMessageCount: { value in
+        QuantgramSettings.showMessageCount = value
+        statePromise.set(currentQuantgramState())
+    }, toggleShowPerMemberCount: { value in
+        QuantgramSettings.showPerMemberCount = value
         statePromise.set(currentQuantgramState())
     })
 
