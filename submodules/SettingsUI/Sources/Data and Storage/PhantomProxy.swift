@@ -171,54 +171,110 @@ func phantomSetEnabled(_ enabled: Bool) {
     UserDefaults.standard.set(enabled, forKey: phantomEnabledKey)
 }
 
-// MARK: - App lifecycle (background → foreground recovery)
+// MARK: - App lifecycle (background → foreground recovery) + reconnect
 
-// When the app is suspended in background, iOS freezes the in-process Phantom
-// engine and tears down its sockets (the local SOCKS5 listener and the upstream
-// reality connection). On resume the engine still reports "running" but is dead,
-// so Telegram keeps dialing 127.0.0.1:<port> with no one serving — previously
-// only an app restart fixed it. We restart the engine on foreground to recover.
+// Weak reference to the shared account manager, set from the app delegate at
+// launch. Needed to nudge Telegram to re-dial the proxy after recovery.
+private weak var phantomStoredAccountManager: AccountManager<TelegramAccountManagerTypes>?
+
+/// Provides the shared account manager so background→foreground recovery can
+/// force Telegram to re-dial the proxy. Call once at launch.
+public func phantomSetAccountManager(_ accountManager: AccountManager<TelegramAccountManagerTypes>) {
+    phantomStoredAccountManager = accountManager
+    PhantomLifecycleObserver.shared.register()
+}
+
+/// Recovers the Phantom connection: restarts the engine (fresh local SOCKS5
+/// listener + upstream) and then forces Telegram to drop and re-dial the proxy
+/// — exactly what manually toggling the proxy off/on does. This is the reliable
+/// fix for a dead connection after the app was suspended in background.
+public func phantomReconnect(accountManager: AccountManager<TelegramAccountManagerTypes>) {
+    phantomStoredAccountManager = accountManager
+    guard let config = phantomLoadConfig() else {
+        return
+    }
+    let json = phantomConfigJSON(config)
+    let server = phantomLocalProxyServer()
+    // Stopping the engine waits for the port to be released; do it off the main
+    // thread so app activation isn't blocked.
+    DispatchQueue.global(qos: .userInitiated).async {
+        _ = phantomEngineStart(json)
+        Queue.mainQueue().async {
+            let _ = updateProxySettingsInteractively(accountManager: accountManager, { settings in
+                var settings = settings
+                settings.enabled = false
+                return settings
+            }).start(completed: {
+                // Give Telegram a moment to tear down the old proxy connection,
+                // then re-activate so it re-dials through the fresh listener.
+                Queue.mainQueue().after(0.4, {
+                    let _ = updateProxySettingsInteractively(accountManager: accountManager, { settings in
+                        var settings = settings
+                        if !settings.servers.contains(server) {
+                            settings.servers.append(server)
+                        }
+                        settings.activeServer = server
+                        settings.enabled = true
+                        return settings
+                    }).start()
+                })
+            })
+        }
+    }
+}
+
+// When the app is suspended in background (or the screen is locked), iOS freezes
+// the in-process Phantom engine and tears down its sockets. On resume the engine
+// may still report "running" but is dead, so Telegram keeps dialing the local
+// port with no working tunnel — previously only an app restart (or toggling the
+// proxy off/on a few times) fixed it. We recover automatically on resume.
 private final class PhantomLifecycleObserver {
     static let shared = PhantomLifecycleObserver()
     private var registered = false
-    private var backgroundedAt: Date?
+    private var leftActiveAt: Date?
 
     func register() {
         if self.registered {
             return
         }
         self.registered = true
-        NotificationCenter.default.addObserver(self, selector: #selector(self.didEnterBackground), name: UIApplication.didEnterBackgroundNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(self.willEnterForeground), name: UIApplication.willEnterForegroundNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(self.willResignActive), name: UIApplication.willResignActiveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(self.didBecomeActive), name: UIApplication.didBecomeActiveNotification, object: nil)
     }
 
-    @objc private func didEnterBackground() {
-        self.backgroundedAt = Date()
+    @objc private func willResignActive() {
+        if self.leftActiveAt == nil {
+            self.leftActiveAt = Date()
+        }
     }
 
-    @objc private func willEnterForeground() {
+    @objc private func didBecomeActive() {
+        let elapsed = self.leftActiveAt.map { Date().timeIntervalSince($0) } ?? 0.0
+        self.leftActiveAt = nil
+
         guard let (config, enabled) = phantomLoadPersisted(), enabled else {
             return
         }
-        // Skip the restart only for very brief switches where the engine is still
-        // alive; any longer background means iOS dropped the engine's sockets.
-        let elapsed = self.backgroundedAt.map { Date().timeIntervalSince($0) } ?? .greatestFiniteMagnitude
-        if elapsed < 1.0 && phantomEngineIsRunning() {
+        // Skip recovery for brief interruptions where the engine is still alive.
+        if elapsed < 3.0 && phantomEngineIsRunning() {
             return
         }
-        let json = phantomConfigJSON(config)
-        // Restart off the main thread: stopping the engine waits for the port to
-        // be released and must not block app activation.
-        DispatchQueue.global(qos: .userInitiated).async {
-            _ = phantomEngineStart(json)
+        if let accountManager = phantomStoredAccountManager {
+            phantomReconnect(accountManager: accountManager)
+        } else {
+            // No account manager available yet — at least refresh the engine.
+            let json = phantomConfigJSON(config)
+            DispatchQueue.global(qos: .userInitiated).async {
+                _ = phantomEngineStart(json)
+            }
         }
     }
 }
 
 /// Called once early in app launch (from Application.init). Registers the
-/// foreground-recovery observer, and if a Phantom proxy was enabled, (re)starts
-/// the engine so the local SOCKS5 listener is up before Telegram's network
-/// restores and dials the active (local) proxy.
+/// recovery observer, and if a Phantom proxy was enabled, (re)starts the engine
+/// so the local SOCKS5 listener is up before Telegram's network restores and
+/// dials the active (local) proxy.
 public func phantomApplyPersistedConfigAtLaunch() {
     PhantomLifecycleObserver.shared.register()
     guard let (config, enabled) = phantomLoadPersisted(), enabled else {

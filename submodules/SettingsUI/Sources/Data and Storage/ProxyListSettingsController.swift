@@ -366,6 +366,22 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             current.enabled = value
             return current
         }).start()
+        // Phantom engine lifecycle: stop it when the proxy is turned off, and
+        // (re)start it when turning the proxy on if Phantom is the active server.
+        if value {
+            let _ = (accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { sharedData in
+                let settings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? ProxySettings.defaultSettings
+                if let active = settings.activeServer, phantomIsLocalProxy(active), let cfg = phantomLoadConfig() {
+                    _ = phantomEngineStart(phantomConfigJSON(cfg))
+                    phantomSetEnabled(true)
+                }
+            })
+        } else {
+            phantomEngineStop()
+            phantomSetEnabled(false)
+        }
     }, addNewServer: {
         pushControllerImpl?(proxyServerSettingsController(sharedContext: sharedContext, presentationData: presentationData, updatedPresentationData: updatedPresentationData, accountManager: accountManager, network: network, currentSettings: nil))
     }, activateServer: { server in

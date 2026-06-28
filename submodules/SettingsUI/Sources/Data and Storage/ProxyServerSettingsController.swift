@@ -19,13 +19,15 @@ private final class ProxyServerSettingsControllerArguments {
     let usePasteboardSettings: () -> Void
     let importLink: () -> Void
     let shareLink: () -> Void
+    let reloadEngine: () -> Void
     
-    init(updateState: @escaping ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void, share: @escaping () -> Void, usePasteboardSettings: @escaping () -> Void, importLink: @escaping () -> Void, shareLink: @escaping () -> Void) {
+    init(updateState: @escaping ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void, share: @escaping () -> Void, usePasteboardSettings: @escaping () -> Void, importLink: @escaping () -> Void, shareLink: @escaping () -> Void, reloadEngine: @escaping () -> Void) {
         self.updateState = updateState
         self.share = share
         self.usePasteboardSettings = usePasteboardSettings
         self.importLink = importLink
         self.shareLink = shareLink
+        self.reloadEngine = reloadEngine
     }
 }
 
@@ -63,6 +65,7 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     case phantomSni(PresentationTheme, String, String)
     case phantomInfo(PresentationTheme, String)
     case phantomShareLink(PresentationTheme, String, Bool)
+    case phantomReload(PresentationTheme, String)
     
     case share(PresentationTheme, String, Bool)
     
@@ -76,7 +79,7 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return ProxySettingsSection.connection.rawValue
             case .credentialsHeader, .credentialsUsername, .credentialsPassword, .credentialsSecret:
                 return ProxySettingsSection.credentials.rawValue
-            case .phantomImport, .phantomHeader, .phantomSecret, .phantomPublicKey, .phantomShortId, .phantomSni, .phantomInfo, .phantomShareLink:
+            case .phantomImport, .phantomHeader, .phantomSecret, .phantomPublicKey, .phantomShortId, .phantomSni, .phantomInfo, .phantomShareLink, .phantomReload:
                 return ProxySettingsSection.phantom.rawValue
             case .share:
                 return ProxySettingsSection.share.rawValue
@@ -125,8 +128,10 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return 18
             case .phantomShareLink:
                 return 19
-            case .share:
+            case .phantomReload:
                 return 20
+            case .share:
+                return 21
         }
     }
     
@@ -255,6 +260,10 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
                 return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: enabled ? .generic : .disabled, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                     arguments.shareLink()
                 })
+            case let .phantomReload(_, text):
+                return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                    arguments.reloadEngine()
+                })
             case let .share(_, text, enabled):
                 return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: enabled ? .generic : .disabled, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                     arguments.share()
@@ -340,6 +349,7 @@ private func proxyServerSettingsControllerEntries(presentationData: Presentation
             entries.append(.phantomSni(presentationData.theme, "SNI", state.sni))
             entries.append(.phantomInfo(presentationData.theme, "Phantom runs locally and routes Telegram through 127.0.0.1:\(phantomLocalSocksPort). Server is host:port above; SNI must match the reality dest."))
             entries.append(.phantomShareLink(presentationData.theme, "Share connection link", state.isComplete))
+            entries.append(.phantomReload(presentationData.theme, "Перезагрузить движок"))
     }
     
     if state.mode != .phantom {
@@ -488,6 +498,10 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         }
     }, shareLink: {
         shareLinkImpl?()
+    }, reloadEngine: {
+        phantomReconnect(accountManager: accountManager)
+        let alert = textAlertController(sharedContext: sharedContext, title: "Phantom", text: "Движок перезапущен, переподключение…", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
+        presentControllerImpl?(alert, nil)
     })
     
     let signal = combineLatest(updatedPresentationData, statePromise.get())
