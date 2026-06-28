@@ -404,9 +404,8 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             |> take(1)
             |> deliverOnMainQueue).start(next: { sharedData in
                 let settings = sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self) ?? ProxySettings.defaultSettings
-                if let active = settings.activeServer, phantomIsLocalProxy(active), let cfg = phantomLoadConfig() {
-                    _ = phantomEngineStart(phantomConfigJSON(cfg))
-                    phantomSetEnabled(true)
+                if let active = settings.activeServer, phantomIsLocalProxy(active) {
+                    phantomStartEngineForPort(active.port)
                 }
             })
         } else {
@@ -426,6 +425,14 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             }
             return current
         }).start()
+        // Phantom: start the engine for the selected connection, or stop it when
+        // switching to a non-Phantom proxy.
+        if phantomIsLocalProxy(server) {
+            phantomStartEngineForPort(server.port)
+        } else {
+            phantomEngineStop()
+            phantomSetEnabled(false)
+        }
     }, editServer: { server in
         pushControllerImpl?(proxyServerSettingsController(sharedContext: sharedContext, presentationData: presentationData, updatedPresentationData: updatedPresentationData, accountManager: accountManager, network: network, currentSettings: server))
     }, removeServer: { server in
@@ -440,6 +447,14 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             }
             return current
         }).start()
+        // Phantom: drop the saved config for this connection too.
+        if phantomIsLocalProxy(server) {
+            phantomRemoveConfigForPort(server.port)
+            if phantomActivePort() == nil {
+                phantomEngineStop()
+                phantomSetEnabled(false)
+            }
+        }
     }, setServerWithRevealedOptions: { server, fromServer in
         updateState { state in
             var state = state

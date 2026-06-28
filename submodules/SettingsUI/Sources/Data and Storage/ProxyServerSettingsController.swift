@@ -393,7 +393,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         // the saved reality parameters if available), never as a bare 127.0.0.1
         // SOCKS5 entry.
         if phantomIsLocalProxy(currentSettings) {
-            initialPhantom = phantomLoadConfig()
+            initialPhantom = phantomConfigForPort(currentSettings.port)?.config ?? phantomLoadConfig()
             currentMode = .phantom
         } else {
             switch currentSettings.connection {
@@ -516,14 +516,14 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         let rightNavigationButton = ItemListNavigationButton(content: .icon(.done), style: .bold, enabled: state.isComplete, action: {
             if state.mode == .phantom {
                 let config = phantomConfig(from: state)
+                let entry = phantomAddOrUpdateConfig(config: config, name: nil)
                 phantomEngineStop()
-                if let errorMessage = phantomEngineStart(phantomConfigJSON(config)) {
+                if let errorMessage = phantomEngineStart(phantomConfigJSON(entry.config, port: entry.port)) {
                     let alert = textAlertController(sharedContext: sharedContext, title: "Phantom", text: errorMessage, actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})])
                     presentControllerImpl?(alert, nil)
                     return
                 }
-                phantomSavePersisted(config: config, enabled: true)
-                let _ = (phantomActivateLocalProxy(accountManager: accountManager) |> deliverOnMainQueue).start(completed: {
+                let _ = (phantomActivateConfig(entry, accountManager: accountManager) |> deliverOnMainQueue).start(completed: {
                     dismissImpl?()
                 })
                 return

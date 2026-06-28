@@ -43,11 +43,140 @@ public struct PhantomProxyConfig: Codable, Equatable {
 }
 
 private let phantomEnabledKey = "phantom.enabled"
-private let phantomConfigKey = "phantom.config.v1"
+private let phantomConfigKey = "phantom.config.v1"     // legacy single config (migrated)
+private let phantomConfigsKey = "phantom.configs.v2"   // list of saved configs
+private let phantomActivePortKey = "phantom.activePort"
+
+/// A saved Phantom connection: the reality config plus a stable id, a display
+/// name and the dedicated local SOCKS5 port that represents it in the proxy list.
+public struct PhantomSavedConfig: Codable, Equatable {
+    public var id: String
+    public var name: String
+    public var port: Int32
+    public var config: PhantomProxyConfig
+}
+
+private func phantomDecodeConfigs() -> [PhantomSavedConfig] {
+    guard let s = UserDefaults.standard.string(forKey: phantomConfigsKey),
+          let data = s.data(using: .utf8),
+          let list = try? JSONDecoder().decode([PhantomSavedConfig].self, from: data) else {
+        return []
+    }
+    return list
+}
+
+private func phantomEncodeConfigs(_ list: [PhantomSavedConfig]) {
+    if let data = try? JSONEncoder().encode(list), let s = String(data: data, encoding: .utf8) {
+        UserDefaults.standard.set(s, forKey: phantomConfigsKey)
+    }
+}
+
+private func phantomDefaultName(for config: PhantomProxyConfig) -> String {
+    if let idx = config.remote.firstIndex(of: ":") {
+        return String(config.remote[..<idx])
+    }
+    if !config.sni.isEmpty {
+        return config.sni
+    }
+    return config.remote.isEmpty ? "Phantom" : config.remote
+}
+
+/// Returns all saved Phantom configs, migrating a legacy single config on first run.
+public func phantomLoadConfigs() -> [PhantomSavedConfig] {
+    var list = phantomDecodeConfigs()
+    if list.isEmpty {
+        let defaults = UserDefaults.standard
+        if let s = defaults.string(forKey: phantomConfigKey), let data = s.data(using: .utf8),
+           let legacy = try? JSONDecoder().decode(PhantomProxyConfig.self, from: data) {
+            let entry = PhantomSavedConfig(id: UUID().uuidString, name: phantomDefaultName(for: legacy), port: phantomLocalSocksPort, config: legacy)
+            list = [entry]
+            phantomEncodeConfigs(list)
+            if defaults.object(forKey: phantomActivePortKey) == nil {
+                defaults.set(Int(phantomLocalSocksPort), forKey: phantomActivePortKey)
+            }
+        }
+    }
+    return list
+}
+
+public func phantomSaveConfigs(_ list: [PhantomSavedConfig]) {
+    phantomEncodeConfigs(list)
+}
+
+public func phantomActivePort() -> Int32? {
+    let defaults = UserDefaults.standard
+    if defaults.object(forKey: phantomActivePortKey) == nil {
+        return nil
+    }
+    return Int32(defaults.integer(forKey: phantomActivePortKey))
+}
+
+public func phantomSetActivePort(_ port: Int32?) {
+    let defaults = UserDefaults.standard
+    if let port = port {
+        defaults.set(Int(port), forKey: phantomActivePortKey)
+    } else {
+        defaults.removeObject(forKey: phantomActivePortKey)
+    }
+}
+
+/// The currently active saved config (the one whose local port is selected).
+public func phantomActiveEntry() -> PhantomSavedConfig? {
+    let list = phantomLoadConfigs()
+    if let port = phantomActivePort(), let entry = list.first(where: { $0.port == port }) {
+        return entry
+    }
+    return list.first
+}
+
+public func phantomAllPorts() -> Set<Int32> {
+    return Set(phantomLoadConfigs().map { $0.port })
+}
+
+public func phantomConfigForPort(_ port: Int32) -> PhantomSavedConfig? {
+    return phantomLoadConfigs().first(where: { $0.port == port })
+}
+
+private func phantomNextFreePort() -> Int32 {
+    let used = phantomAllPorts()
+    var port: Int32 = phantomLocalSocksPort
+    while used.contains(port) || port == 1080 {
+        port += 1
+    }
+    return port
+}
+
+/// Adds a new saved config (or updates an existing one with the same server +
+/// secret), returning the stored entry.
+public func phantomAddOrUpdateConfig(config: PhantomProxyConfig, name: String?) -> PhantomSavedConfig {
+    var list = phantomLoadConfigs()
+    if let index = list.firstIndex(where: { $0.config.remote == config.remote && $0.config.secret == config.secret }) {
+        list[index].config = config
+        if let name = name, !name.isEmpty {
+            list[index].name = name
+        }
+        phantomEncodeConfigs(list)
+        return list[index]
+    }
+    let resolvedName = (name?.isEmpty == false) ? name! : phantomDefaultName(for: config)
+    let entry = PhantomSavedConfig(id: UUID().uuidString, name: resolvedName, port: phantomNextFreePort(), config: config)
+    list.append(entry)
+    phantomEncodeConfigs(list)
+    return entry
+}
+
+public func phantomRemoveConfigForPort(_ port: Int32) {
+    var list = phantomLoadConfigs()
+    list.removeAll(where: { $0.port == port })
+    phantomEncodeConfigs(list)
+    if phantomActivePort() == port {
+        phantomSetActivePort(nil)
+    }
+}
 
 /// Serializes the config into the JSON schema expected by the engine
 /// (phantom/mobile Config). The local SOCKS5 address is injected here.
-public func phantomConfigJSON(_ c: PhantomProxyConfig) -> String {
+public func phantomConfigJSON(_ c: PhantomProxyConfig, port: Int32 = phantomLocalSocksPort) -> String {
     let dict: [String: Any] = [
         "remote": c.remote,
         "transport": "reality",
@@ -55,7 +184,7 @@ public func phantomConfigJSON(_ c: PhantomProxyConfig) -> String {
         "secret": c.secret,
         "reality_public_key": c.realityPublicKey,
         "reality_short_id": c.realityShortId,
-        "socks": "\(phantomLocalSocksHost):\(phantomLocalSocksPort)",
+        "socks": "\(phantomLocalSocksHost):\(port)",
         "vision": c.vision,
         "post_quantum": c.postQuantum,
         "tls_fragment": c.tlsFragment,
@@ -186,21 +315,16 @@ public func phantomParseShareLink(_ s: String) -> PhantomProxyConfig? {
 // MARK: - Persistence
 
 public func phantomSavePersisted(config: PhantomProxyConfig, enabled: Bool) {
-    let defaults = UserDefaults.standard
-    if let data = try? JSONEncoder().encode(config), let s = String(data: data, encoding: .utf8) {
-        defaults.set(s, forKey: phantomConfigKey)
-    }
-    defaults.set(enabled, forKey: phantomEnabledKey)
+    let entry = phantomAddOrUpdateConfig(config: config, name: nil)
+    phantomSetActivePort(entry.port)
+    UserDefaults.standard.set(enabled, forKey: phantomEnabledKey)
 }
 
 func phantomLoadPersisted() -> (config: PhantomProxyConfig, enabled: Bool)? {
-    let defaults = UserDefaults.standard
-    guard let s = defaults.string(forKey: phantomConfigKey),
-          let data = s.data(using: .utf8),
-          let config = try? JSONDecoder().decode(PhantomProxyConfig.self, from: data) else {
+    guard let entry = phantomActiveEntry() else {
         return nil
     }
-    return (config, defaults.bool(forKey: phantomEnabledKey))
+    return (entry.config, UserDefaults.standard.bool(forKey: phantomEnabledKey))
 }
 
 func phantomSetEnabled(_ enabled: Bool) {
@@ -232,8 +356,8 @@ public func phantomSetConnectionStatusProvider(_ provider: @escaping () -> Signa
 
 // Forces Telegram to drop and re-dial the proxy (equivalent to toggling the
 // proxy off/on) so it reconnects through the freshly restarted local listener.
-private func phantomNudgeProxy(accountManager: AccountManager<TelegramAccountManagerTypes>) {
-    let server = phantomLocalProxyServer()
+private func phantomNudgeProxy(accountManager: AccountManager<TelegramAccountManagerTypes>, port: Int32) {
+    let server = phantomLocalProxyServer(port: port)
     let _ = updateProxySettingsInteractively(accountManager: accountManager, { settings in
         var settings = settings
         settings.enabled = false
@@ -268,10 +392,10 @@ public func phantomReconnect(accountManager: AccountManager<TelegramAccountManag
 }
 
 private func phantomRunRecoveryAttempt(accountManager: AccountManager<TelegramAccountManagerTypes>, attempt: Int) {
-    guard let config = phantomLoadConfig() else {
+    guard let entry = phantomActiveEntry() else {
         return
     }
-    let json = phantomConfigJSON(config)
+    let json = phantomConfigJSON(entry.config, port: entry.port)
     // Restart the engine on a background queue (stop waits for the port to be
     // released, which can block after a long suspension). Fire-and-forget so a
     // wedged restart can't stall the recovery loop.
@@ -281,7 +405,7 @@ private func phantomRunRecoveryAttempt(accountManager: AccountManager<TelegramAc
     // Give the fresh listener a moment to come up, then nudge Telegram to
     // re-dial and schedule a status check that retries if still offline.
     Queue.mainQueue().after(1.0, {
-        phantomNudgeProxy(accountManager: accountManager)
+        phantomNudgeProxy(accountManager: accountManager, port: entry.port)
         phantomScheduleRecoveryCheck(accountManager: accountManager, attempt: attempt)
     })
 }
@@ -353,7 +477,7 @@ private final class PhantomLifecycleObserver {
         let elapsed = self.leftActiveAt.map { Date().timeIntervalSince($0) } ?? 0.0
         self.leftActiveAt = nil
 
-        guard let (config, enabled) = phantomLoadPersisted(), enabled else {
+        guard UserDefaults.standard.bool(forKey: phantomEnabledKey), let entry = phantomActiveEntry() else {
             return
         }
         // Skip recovery for brief interruptions where the engine is still alive.
@@ -364,7 +488,7 @@ private final class PhantomLifecycleObserver {
             phantomReconnect(accountManager: accountManager)
         } else {
             // No account manager available yet — at least refresh the engine.
-            let json = phantomConfigJSON(config)
+            let json = phantomConfigJSON(entry.config, port: entry.port)
             DispatchQueue.global(qos: .userInitiated).async {
                 _ = phantomEngineStart(json)
             }
@@ -378,39 +502,72 @@ private final class PhantomLifecycleObserver {
 /// dials the active (local) proxy.
 public func phantomApplyPersistedConfigAtLaunch() {
     PhantomLifecycleObserver.shared.register()
-    guard let (config, enabled) = phantomLoadPersisted(), enabled else {
+    guard UserDefaults.standard.bool(forKey: phantomEnabledKey), let entry = phantomActiveEntry() else {
         return
     }
-    _ = phantomEngineStart(phantomConfigJSON(config))
+    _ = phantomEngineStart(phantomConfigJSON(entry.config, port: entry.port))
 }
 
 // MARK: - Proxy activation
 
-/// The local SOCKS5 server that represents the running Phantom tunnel.
-func phantomLocalProxyServer() -> ProxyServerSettings {
-    return ProxyServerSettings(host: phantomLocalSocksHost, port: phantomLocalSocksPort, connection: .socks5(username: nil, password: nil))
+/// The local SOCKS5 server that represents a running Phantom tunnel on a port.
+func phantomLocalProxyServer(port: Int32 = phantomLocalSocksPort) -> ProxyServerSettings {
+    return ProxyServerSettings(host: phantomLocalSocksHost, port: port, connection: .socks5(username: nil, password: nil))
 }
 
-/// Reports whether the given proxy server is our local Phantom entry
-/// (127.0.0.1:<phantomLocalSocksPort> SOCKS5).
+/// Reports whether the given proxy server is one of our local Phantom entries
+/// (127.0.0.1:<a saved phantom port> SOCKS5).
 func phantomIsLocalProxy(_ server: ProxyServerSettings) -> Bool {
-    guard server.host == phantomLocalSocksHost, server.port == phantomLocalSocksPort else {
+    guard server.host == phantomLocalSocksHost else {
         return false
     }
-    if case .socks5 = server.connection {
-        return true
+    guard case .socks5 = server.connection else {
+        return false
     }
-    return false
+    return server.port == phantomLocalSocksPort || phantomAllPorts().contains(server.port)
 }
 
-/// Returns the persisted Phantom config (reality params), if any.
+/// Returns the config (reality params) of the active Phantom connection, if any.
 func phantomLoadConfig() -> PhantomProxyConfig? {
-    return phantomLoadPersisted()?.config
+    return phantomActiveEntry()?.config
 }
 
-/// Adds (if missing) and activates the local SOCKS5 proxy in the account
-/// manager's proxy settings, enabling proxying.
+/// Marks the given saved config active (selected port + enabled) and points
+/// Telegram's proxy at its local port. Does NOT (re)start the engine — callers do.
+public func phantomActivateConfig(_ entry: PhantomSavedConfig, accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<Bool, NoError> {
+    phantomSetActivePort(entry.port)
+    UserDefaults.standard.set(true, forKey: phantomEnabledKey)
+    let server = phantomLocalProxyServer(port: entry.port)
+    return updateProxySettingsInteractively(accountManager: accountManager, { settings in
+        var settings = settings
+        if !settings.servers.contains(server) {
+            settings.servers.append(server)
+        }
+        settings.activeServer = server
+        settings.enabled = true
+        return settings
+    })
+}
+
+/// Starts the engine for the saved config that owns the given local port (used
+/// when the user switches to a Phantom entry in the proxy list).
+public func phantomStartEngineForPort(_ port: Int32) {
+    guard let entry = phantomConfigForPort(port) else {
+        return
+    }
+    phantomSetActivePort(entry.port)
+    UserDefaults.standard.set(true, forKey: phantomEnabledKey)
+    let json = phantomConfigJSON(entry.config, port: entry.port)
+    DispatchQueue.global(qos: .userInitiated).async {
+        _ = phantomEngineStart(json)
+    }
+}
+
+/// Activates the currently active Phantom connection (back-compat helper).
 public func phantomActivateLocalProxy(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<Bool, NoError> {
+    if let entry = phantomActiveEntry() {
+        return phantomActivateConfig(entry, accountManager: accountManager)
+    }
     let server = phantomLocalProxyServer()
     return updateProxySettingsInteractively(accountManager: accountManager, { settings in
         var settings = settings

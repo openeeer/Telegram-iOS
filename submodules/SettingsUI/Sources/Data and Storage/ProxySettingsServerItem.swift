@@ -244,7 +244,9 @@ private final class ProxySettingsServerItemNode: ItemListRevealOptionsItemNode {
             
             let titleAttributedString = NSMutableAttributedString()
             if phantomIsLocalProxy(item.server) {
-                titleAttributedString.append(NSAttributedString(string: "Phantom", font: titleFont, textColor: item.theme.list.itemPrimaryTextColor))
+                let phantomName = phantomConfigForPort(item.server.port)?.name
+                let titleText = (phantomName?.isEmpty == false) ? "Phantom · \(phantomName!)" : "Phantom"
+                titleAttributedString.append(NSAttributedString(string: titleText, font: titleFont, textColor: item.theme.list.itemPrimaryTextColor))
             } else {
                 titleAttributedString.append(NSAttributedString(string: urlEncodedStringFromString(item.server.host), font: titleFont, textColor: item.theme.list.itemPrimaryTextColor))
                 titleAttributedString.append(NSAttributedString(string: ":\(item.server.port)", font: titleFont, textColor: item.theme.list.itemSecondaryTextColor))
