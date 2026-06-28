@@ -399,6 +399,20 @@ private func opportunisticallyTransformOutgoingMedia(network: Network, postbox: 
 
 public func enqueueMessages(account: Account, peerId: PeerId, messages: [EnqueueMessage]) -> Signal<[MessageId?], NoError> {
     QuantgramGhostRead.markReplied(peerId)
+    // Quantgram: when link previews are disabled, strip the web page preview
+    // from every outgoing message so the server doesn't attach one.
+    var messages = messages
+    if UserDefaults.standard.bool(forKey: "quantgram.disableLinkPreviews") {
+        messages = messages.map { message in
+            return message.withUpdatedAttributes { attributes in
+                var attributes = attributes
+                if !attributes.contains(where: { $0 is OutgoingContentInfoMessageAttribute }) {
+                    attributes.append(OutgoingContentInfoMessageAttribute(flags: [.disableLinkPreviews]))
+                }
+                return attributes
+            }
+        }
+    }
     let signal: Signal<[(Bool, EnqueueMessage)], NoError>
     if let transformOutgoingMessageMedia = account.transformOutgoingMessageMedia {
         signal = opportunisticallyTransformOutgoingMedia(network: account.network, postbox: account.postbox, transformOutgoingMessageMedia: transformOutgoingMessageMedia, messages: messages, userInteractive: true)

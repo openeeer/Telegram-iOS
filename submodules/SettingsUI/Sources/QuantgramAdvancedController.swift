@@ -143,7 +143,7 @@ private func quantgramAdvancedEntries(presentationData: PresentationData, state:
     entries.append(.localPins(presentationData.theme, "Локальные закреплённые чаты", state.localPins))
     entries.append(.localPinsInfo(presentationData.theme, "Закреплённые чаты загружаются с сервера один раз при входе, дальше закрепление работает только локально (не синхронизируется и не ограничивается лимитом сервера). На других устройствах эти закрепления не появятся."))
     entries.append(.disableLinkPreviews(presentationData.theme, "Не генерировать превью ссылок", state.disableLinkPreviews))
-    entries.append(.disableLinkPreviewsInfo(presentationData.theme, "При наборе сообщения со ссылкой превью не запрашивается с сервера — меньше трафика и следов. На уже отправленные сообщения не влияет."))
+    entries.append(.disableLinkPreviewsInfo(presentationData.theme, "Превью ссылок не запрашивается с сервера при наборе и не прикрепляется к вашим отправленным сообщениям — меньше трафика и следов."))
     return entries
 }
 
