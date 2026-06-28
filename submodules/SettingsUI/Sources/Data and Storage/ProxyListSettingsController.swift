@@ -364,7 +364,6 @@ public func proxySettingsController(context: AccountContext, mode: ProxySettings
 public func proxySettingsController(accountManager: AccountManager<TelegramAccountManagerTypes>, sharedContext: SharedAccountContext, context: AccountContext? = nil, network: Network, mode: ProxySettingsControllerMode, presentationData: PresentationData, updatedPresentationData: Signal<PresentationData, NoError>, focusOnItemTag: ProxySettingsEntryTag? = nil) -> ViewController {
     var pushControllerImpl: ((ViewController) -> Void)?
     var dismissImpl: (() -> Void)?
-    var presentControllerImpl: ((ViewController, Any?) -> Void)?
     let stateValue = Atomic(value: ProxySettingsControllerState())
     let statePromise = ValuePromise<ProxySettingsControllerState>(stateValue.with { $0 })
     let updateState: ((ProxySettingsControllerState) -> ProxySettingsControllerState) -> Void = { f in
@@ -390,6 +389,9 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     }
     
     var shareProxyListImpl: (() -> Void)?
+    
+    let statusesRefreshValue = Atomic<Int>(value: 0)
+    let statusesRefreshToken = ValuePromise<Int>(0, ignoreRepeated: false)
     
     let arguments = ProxySettingsControllerArguments(toggleEnabled: { value in
         let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in
@@ -474,21 +476,10 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     }, reloadPhantomEngine: {
         phantomReconnect(accountManager: accountManager)
     }, measurePing: {
-        guard let cfg = phantomLoadConfig() else {
-            return
-        }
-        var host = cfg.remote
-        var port: UInt16 = 443
-        if let idx = cfg.remote.lastIndex(of: ":") {
-            host = String(cfg.remote[..<idx])
-            if let parsedPort = UInt16(cfg.remote[cfg.remote.index(after: idx)...]) {
-                port = parsedPort
-            }
-        }
-        phantomMeasurePing(host: host, port: port, completion: { ms in
-            let pingText = ms.map { "\($0) мс" } ?? "недоступен"
-            presentControllerImpl?(textAlertController(sharedContext: sharedContext, title: "Phantom", text: "Пинг сервера \(host): \(pingText)", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), nil)
-        })
+        // Re-measure the ping shown in the proxy list rows (recreates the
+        // statuses context so each server is re-pinged).
+        let updated = statusesRefreshValue.modify { $0 + 1 }
+        statusesRefreshToken.set(updated)
     })
     
     let proxySettings = Promise<ProxySettings>()
@@ -501,12 +492,15 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }
     })
     
-    let statusesContext = ProxyServersStatuses(network: network, servers: proxySettings.get()
-    |> map { proxySettings -> [ProxyServerSettings] in
-        return proxySettings.servers
-    })
+    let proxyStatuses: Signal<[ProxyServerSettings: ProxyServerStatus], NoError> = statusesRefreshToken.get()
+    |> mapToSignal { _ -> Signal<[ProxyServerSettings: ProxyServerStatus], NoError> in
+        return ProxyServersStatuses(network: network, servers: proxySettings.get()
+        |> map { proxySettings -> [ProxyServerSettings] in
+            return proxySettings.servers
+        }).statuses()
+    }
     
-    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus)
+    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), proxyStatuses, network.connectionStatus)
     |> map { presentationData, state, proxySettings, statuses, connectionStatus -> (ItemListControllerState, (ItemListNodeState, Any)) in
         var presentationData = presentationData
         let updatedTheme = presentationData.theme.withModalBlocksBackground()
@@ -553,9 +547,6 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     }
     dismissImpl = { [weak controller] in
         controller?.dismiss()
-    }
-    presentControllerImpl = { [weak controller] c, a in
-        controller?.present(c, in: .window(.root), with: a)
     }
     controller.setReorderEntry({ (fromIndex: Int, toIndex: Int, entries: [ProxySettingsControllerEntry]) -> Signal<Bool, NoError> in
         let fromEntry = entries[fromIndex]
