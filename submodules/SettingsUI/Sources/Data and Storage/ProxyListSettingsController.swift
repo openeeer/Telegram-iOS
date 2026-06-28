@@ -20,8 +20,9 @@ private final class ProxySettingsControllerArguments {
     let setServerWithRevealedOptions: (ProxyServerSettings?, ProxyServerSettings?) -> Void
     let toggleUseForCalls: (Bool) -> Void
     let shareProxyList: () -> Void
+    let reloadPhantomEngine: () -> Void
     
-    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void) {
+    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void, reloadPhantomEngine: @escaping () -> Void) {
         self.toggleEnabled = toggleEnabled
         self.addNewServer = addNewServer
         self.activateServer = activateServer
@@ -30,6 +31,7 @@ private final class ProxySettingsControllerArguments {
         self.setServerWithRevealedOptions = setServerWithRevealedOptions
         self.toggleUseForCalls = toggleUseForCalls
         self.shareProxyList = shareProxyList
+        self.reloadPhantomEngine = reloadPhantomEngine
     }
 }
 
@@ -80,6 +82,7 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
     case shareProxyList(PresentationTheme, String)
     case useForCalls(PresentationTheme, String, Bool)
     case useForCallsInfo(PresentationTheme, String)
+    case reloadPhantomEngine(PresentationTheme, String)
     
     var section: ItemListSectionId {
         switch self {
@@ -89,7 +92,7 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 return ProxySettingsControllerSection.servers.rawValue
             case .shareProxyList:
                 return ProxySettingsControllerSection.share.rawValue
-            case .useForCalls, .useForCallsInfo:
+            case .useForCalls, .useForCallsInfo, .reloadPhantomEngine:
                 return ProxySettingsControllerSection.calls.rawValue
         }
     }
@@ -110,6 +113,8 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 return .index(4)
             case .useForCallsInfo:
                 return .index(5)
+            case .reloadPhantomEngine:
+                return .index(6)
         }
     }
     
@@ -153,6 +158,12 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 }
             case let .useForCallsInfo(lhsTheme, lhsText):
                 if case let .useForCallsInfo(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .reloadPhantomEngine(lhsTheme, lhsText):
+                if case let .reloadPhantomEngine(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
                     return true
                 } else {
                     return false
@@ -207,6 +218,13 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                         return true
                 }
             case .useForCallsInfo:
+                switch rhs {
+                    case .reloadPhantomEngine:
+                        return true
+                    default:
+                        return false
+                }
+            case .reloadPhantomEngine:
                 return false
         }
     }
@@ -248,6 +266,10 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 }, tag: ProxySettingsEntryTag.useForCalls)
             case let .useForCallsInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+            case let .reloadPhantomEngine(_, text):
+                return ProxySettingsActionItem(presentationData: presentationData, systemStyle: .glass, title: text, sectionId: self.section, editing: false, action: {
+                    arguments.reloadPhantomEngine()
+                })
         }
     }
 }
@@ -311,6 +333,10 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
     if let activeServer = proxySettings.activeServer, case .socks5 = activeServer.connection {
         entries.append(.useForCalls(theme, strings.SocksProxySetup_UseForCalls, proxySettings.useForCalls))
         entries.append(.useForCallsInfo(theme, strings.SocksProxySetup_UseForCallsHelp))
+    }
+    
+    if let activeServer = proxySettings.activeServer, phantomIsLocalProxy(activeServer) {
+        entries.append(.reloadPhantomEngine(theme, "Перезагрузить движок"))
     }
     
     return entries
@@ -425,6 +451,8 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }).start()
     }, shareProxyList: {
        shareProxyListImpl?()
+    }, reloadPhantomEngine: {
+        phantomReconnect(accountManager: accountManager)
     })
     
     let proxySettings = Promise<ProxySettings>()

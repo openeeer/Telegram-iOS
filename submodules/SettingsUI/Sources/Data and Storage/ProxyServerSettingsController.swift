@@ -349,7 +349,6 @@ private func proxyServerSettingsControllerEntries(presentationData: Presentation
             entries.append(.phantomSni(presentationData.theme, "SNI", state.sni))
             entries.append(.phantomInfo(presentationData.theme, "Phantom runs locally and routes Telegram through 127.0.0.1:\(phantomLocalSocksPort). Server is host:port above; SNI must match the reality dest."))
             entries.append(.phantomShareLink(presentationData.theme, "Share connection link", state.isComplete))
-            entries.append(.phantomReload(presentationData.theme, "Перезагрузить движок"))
     }
     
     if state.mode != .phantom {
