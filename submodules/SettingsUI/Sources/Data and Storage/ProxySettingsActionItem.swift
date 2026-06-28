@@ -20,9 +20,10 @@ final class ProxySettingsActionItem: ListViewItem, ItemListItem {
     let editing: Bool
     let sectionId: ItemListSectionId
     let action: () -> Void
+    let accessoryAction: (() -> Void)?
     let tag: ItemListItemTag?
     
-    init(presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .legacy, title: String, icon: ProxySettingsActionIcon = .none, sectionId: ItemListSectionId, editing: Bool, action: @escaping () -> Void, tag: ItemListItemTag? = nil) {
+    init(presentationData: ItemListPresentationData, systemStyle: ItemListSystemStyle = .legacy, title: String, icon: ProxySettingsActionIcon = .none, sectionId: ItemListSectionId, editing: Bool, action: @escaping () -> Void, accessoryAction: (() -> Void)? = nil, tag: ItemListItemTag? = nil) {
         self.presentationData = presentationData
         self.systemStyle = systemStyle
         self.title = title
@@ -30,6 +31,7 @@ final class ProxySettingsActionItem: ListViewItem, ItemListItem {
         self.editing = editing
         self.sectionId = sectionId
         self.action = action
+        self.accessoryAction = accessoryAction
         self.tag = tag
     }
     
@@ -89,6 +91,7 @@ private final class ProxySettingsActionItemNode: ListViewItemNode, ItemListItemN
     
     private let iconNode: ASImageNode
     private let titleNode: TextNode
+    private let accessoryButtonNode: HighlightableButtonNode
     
     private var item: ProxySettingsActionItem?
     
@@ -124,12 +127,20 @@ private final class ProxySettingsActionItemNode: ListViewItemNode, ItemListItemN
         self.highlightedBackgroundNode = ASDisplayNode()
         self.highlightedBackgroundNode.isLayerBacked = true
         
+        self.accessoryButtonNode = HighlightableButtonNode()
+        
         super.init(layerBacked: false)
         
         self.isAccessibilityElement = true
         
         self.addSubnode(self.iconNode)
         self.addSubnode(self.titleNode)
+        self.addSubnode(self.accessoryButtonNode)
+        self.accessoryButtonNode.addTarget(self, action: #selector(self.accessoryPressed), forControlEvents: .touchUpInside)
+    }
+    
+    @objc private func accessoryPressed() {
+        self.item?.accessoryAction?()
     }
     
     public func displayHighlight() {
@@ -163,7 +174,9 @@ private final class ProxySettingsActionItemNode: ListViewItemNode, ItemListItemN
             
             let editingOffset: CGFloat = (item.editing ? 38.0 : 0.0)
             
-            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: item.presentationData.theme.list.itemAccentColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - editingOffset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let accessoryWidth: CGFloat = item.accessoryAction != nil ? 56.0 : 0.0
+            
+            let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: NSAttributedString(string: item.title, font: titleFont, textColor: item.presentationData.theme.list.itemAccentColor), backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - editingOffset - accessoryWidth, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             let separatorHeight = UIScreenPixel
             let separatorRightInset: CGFloat = item.systemStyle == .glass ? 16.0 : 0.0
@@ -183,6 +196,12 @@ private final class ProxySettingsActionItemNode: ListViewItemNode, ItemListItemN
             let layoutSize = layout.size
             
             let icon = item.icon == .add ? PresentationResourcesItemList.plusIconImage(item.presentationData.theme) : nil
+            var accessoryIcon: UIImage?
+            if item.accessoryAction != nil {
+                if #available(iOS 13.0, *) {
+                    accessoryIcon = generateTintedImage(image: UIImage(systemName: "arrow.triangle.2.circlepath"), color: item.presentationData.theme.list.itemAccentColor)
+                }
+            }
             
             return (layout, { [weak self] animated in
                 if let strongSelf = self {
@@ -210,6 +229,15 @@ private final class ProxySettingsActionItemNode: ListViewItemNode, ItemListItemN
                     strongSelf.iconNode.image = icon
                     if let image = icon {
                         transition.updateFrame(node: strongSelf.iconNode, frame: CGRect(origin: CGPoint(x: params.leftInset + editingOffset + floor((leftInset - params.leftInset - image.size.width) / 2.0), y: floor((contentSize.height - image.size.height) / 2.0)), size: image.size))
+                    }
+                    
+                    if item.accessoryAction != nil {
+                        strongSelf.accessoryButtonNode.isHidden = false
+                        strongSelf.accessoryButtonNode.setImage(accessoryIcon, for: .normal)
+                        let accW: CGFloat = 56.0
+                        strongSelf.accessoryButtonNode.frame = CGRect(origin: CGPoint(x: params.width - params.rightInset - accW, y: 0.0), size: CGSize(width: accW, height: contentSize.height))
+                    } else {
+                        strongSelf.accessoryButtonNode.isHidden = true
                     }
                     
                     if strongSelf.backgroundNode.supernode == nil {

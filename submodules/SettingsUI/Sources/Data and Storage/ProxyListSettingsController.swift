@@ -21,8 +21,9 @@ private final class ProxySettingsControllerArguments {
     let toggleUseForCalls: (Bool) -> Void
     let shareProxyList: () -> Void
     let reloadPhantomEngine: () -> Void
+    let measurePing: () -> Void
     
-    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void, reloadPhantomEngine: @escaping () -> Void) {
+    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void, reloadPhantomEngine: @escaping () -> Void, measurePing: @escaping () -> Void) {
         self.toggleEnabled = toggleEnabled
         self.addNewServer = addNewServer
         self.activateServer = activateServer
@@ -32,6 +33,7 @@ private final class ProxySettingsControllerArguments {
         self.toggleUseForCalls = toggleUseForCalls
         self.shareProxyList = shareProxyList
         self.reloadPhantomEngine = reloadPhantomEngine
+        self.measurePing = measurePing
     }
 }
 
@@ -245,6 +247,8 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
             case let .addServer(_, text, _):
                 return ProxySettingsActionItem(presentationData: presentationData, systemStyle: .glass, title: text, icon: .add, sectionId: self.section, editing: false, action: {
                     arguments.addNewServer()
+                }, accessoryAction: {
+                    arguments.measurePing()
                 })
             case let .server(_, theme, strings, settings, active, status, editing, enabled):
                 return ProxySettingsServerItem(theme: theme, strings: strings, systemStyle: .glass, server: settings, activity: status.activity, active: active, color: enabled ? .accent : .secondary, label: status.text, labelAccent: status.textActive, editing: editing, sectionId: self.section, action: {
@@ -360,6 +364,7 @@ public func proxySettingsController(context: AccountContext, mode: ProxySettings
 public func proxySettingsController(accountManager: AccountManager<TelegramAccountManagerTypes>, sharedContext: SharedAccountContext, context: AccountContext? = nil, network: Network, mode: ProxySettingsControllerMode, presentationData: PresentationData, updatedPresentationData: Signal<PresentationData, NoError>, focusOnItemTag: ProxySettingsEntryTag? = nil) -> ViewController {
     var pushControllerImpl: ((ViewController) -> Void)?
     var dismissImpl: (() -> Void)?
+    var presentControllerImpl: ((ViewController, Any?) -> Void)?
     let stateValue = Atomic(value: ProxySettingsControllerState())
     let statePromise = ValuePromise<ProxySettingsControllerState>(stateValue.with { $0 })
     let updateState: ((ProxySettingsControllerState) -> ProxySettingsControllerState) -> Void = { f in
@@ -453,6 +458,22 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
        shareProxyListImpl?()
     }, reloadPhantomEngine: {
         phantomReconnect(accountManager: accountManager)
+    }, measurePing: {
+        guard let cfg = phantomLoadConfig() else {
+            return
+        }
+        var host = cfg.remote
+        var port: UInt16 = 443
+        if let idx = cfg.remote.lastIndex(of: ":") {
+            host = String(cfg.remote[..<idx])
+            if let parsedPort = UInt16(cfg.remote[cfg.remote.index(after: idx)...]) {
+                port = parsedPort
+            }
+        }
+        phantomMeasurePing(host: host, port: port, completion: { ms in
+            let pingText = ms.map { "\($0) мс" } ?? "недоступен"
+            presentControllerImpl?(textAlertController(sharedContext: sharedContext, title: "Phantom", text: "Пинг сервера \(host): \(pingText)", actions: [TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})]), nil)
+        })
     })
     
     let proxySettings = Promise<ProxySettings>()
@@ -517,6 +538,9 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     }
     dismissImpl = { [weak controller] in
         controller?.dismiss()
+    }
+    presentControllerImpl = { [weak controller] c, a in
+        controller?.present(c, in: .window(.root), with: a)
     }
     controller.setReorderEntry({ (fromIndex: Int, toIndex: Int, entries: [ProxySettingsControllerEntry]) -> Signal<Bool, NoError> in
         let fromEntry = entries[fromIndex]
