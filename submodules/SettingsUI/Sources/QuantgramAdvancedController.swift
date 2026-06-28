@@ -17,7 +17,6 @@ public struct QuantgramSettings {
     private static let disableLinkPreviewsKey = "quantgram.disableLinkPreviews"
     private static let disableSwipeCameraKey = "quantgram.disableSwipeCamera"
     private static let showMessageCountKey = "quantgram.showMessageCount"
-    private static let showPerMemberCountKey = "quantgram.showPerMemberCount"
 
     /// "Read without read receipt": incoming messages are marked read only after
     /// the user sends a reply in the chat.
@@ -58,13 +57,6 @@ public struct QuantgramSettings {
         get { return UserDefaults.standard.bool(forKey: showMessageCountKey) }
         set { UserDefaults.standard.set(newValue, forKey: showMessageCountKey) }
     }
-
-    /// "Show per-member message count" (groups): display each member's message
-    /// count under the members block.
-    public static var showPerMemberCount: Bool {
-        get { return UserDefaults.standard.bool(forKey: showPerMemberCountKey) }
-        set { UserDefaults.standard.set(newValue, forKey: showPerMemberCountKey) }
-    }
 }
 
 private struct QuantgramState: Equatable {
@@ -73,11 +65,10 @@ private struct QuantgramState: Equatable {
     var disableLinkPreviews: Bool
     var disableSwipeCamera: Bool
     var showMessageCount: Bool
-    var showPerMemberCount: Bool
 }
 
 private func currentQuantgramState() -> QuantgramState {
-    return QuantgramState(ghostRead: QuantgramSettings.ghostRead, localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount, showPerMemberCount: QuantgramSettings.showPerMemberCount)
+    return QuantgramState(ghostRead: QuantgramSettings.ghostRead, localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount)
 }
 
 private final class QuantgramAdvancedArguments {
@@ -86,14 +77,12 @@ private final class QuantgramAdvancedArguments {
     let toggleDisableLinkPreviews: (Bool) -> Void
     let toggleDisableSwipeCamera: (Bool) -> Void
     let toggleShowMessageCount: (Bool) -> Void
-    let toggleShowPerMemberCount: (Bool) -> Void
-    init(toggleGhostRead: @escaping (Bool) -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void, toggleShowPerMemberCount: @escaping (Bool) -> Void) {
+    init(toggleGhostRead: @escaping (Bool) -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void) {
         self.toggleGhostRead = toggleGhostRead
         self.toggleLocalPins = toggleLocalPins
         self.toggleDisableLinkPreviews = toggleDisableLinkPreviews
         self.toggleDisableSwipeCamera = toggleDisableSwipeCamera
         self.toggleShowMessageCount = toggleShowMessageCount
-        self.toggleShowPerMemberCount = toggleShowPerMemberCount
     }
 }
 
@@ -116,8 +105,6 @@ private enum QuantgramEntry: ItemListNodeEntry {
     case disableSwipeCameraInfo(PresentationTheme, String)
     case showMessageCount(PresentationTheme, String, Bool)
     case showMessageCountInfo(PresentationTheme, String)
-    case showPerMemberCount(PresentationTheme, String, Bool)
-    case showPerMemberCountInfo(PresentationTheme, String)
 
     var section: ItemListSectionId {
         switch self {
@@ -129,7 +116,7 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 return QuantgramSection.links.rawValue
             case .disableSwipeCamera, .disableSwipeCameraInfo:
                 return QuantgramSection.camera.rawValue
-            case .showMessageCount, .showMessageCountInfo, .showPerMemberCount, .showPerMemberCountInfo:
+            case .showMessageCount, .showMessageCountInfo:
                 return QuantgramSection.messages.rawValue
         }
     }
@@ -156,10 +143,6 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 return 8
             case .showMessageCountInfo:
                 return 9
-            case .showPerMemberCount:
-                return 10
-            case .showPerMemberCountInfo:
-                return 11
         }
     }
 
@@ -200,12 +183,6 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 })
             case let .showMessageCountInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
-            case let .showPerMemberCount(_, text, value):
-                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
-                    arguments.toggleShowPerMemberCount(value)
-                })
-            case let .showPerMemberCountInfo(_, text):
-                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         }
     }
 }
@@ -222,8 +199,6 @@ private func quantgramAdvancedEntries(presentationData: PresentationData, state:
     entries.append(.disableSwipeCameraInfo(presentationData.theme, "Свайп по списку чатов больше не открывает камеру историй. Переключение папок свайпом продолжает работать."))
     entries.append(.showMessageCount(presentationData.theme, "Показывать количество сообщений", state.showMessageCount))
     entries.append(.showMessageCountInfo(presentationData.theme, "В профиле чата (ЛС и группы) показывается общее число сообщений в переписке."))
-    entries.append(.showPerMemberCount(presentationData.theme, "Сообщения по участникам (группы)", state.showPerMemberCount))
-    entries.append(.showPerMemberCountInfo(presentationData.theme, "Под блоком участников группы показывается число сообщений каждого участника. Для больших групп учитываются первые 50 участников (чтобы не упереться в лимиты сервера)."))
     return entries
 }
 
@@ -246,9 +221,6 @@ public func quantgramAdvancedController(context: AccountContext) -> ViewControll
         statePromise.set(currentQuantgramState())
     }, toggleShowMessageCount: { value in
         QuantgramSettings.showMessageCount = value
-        statePromise.set(currentQuantgramState())
-    }, toggleShowPerMemberCount: { value in
-        QuantgramSettings.showPerMemberCount = value
         statePromise.set(currentQuantgramState())
     })
 

@@ -872,7 +872,7 @@ func infoItems(
         }
     }
     
-    // Quantgram: message count rows (gated by Advanced toggles).
+    // Quantgram: total message count row (gated by Advanced toggle).
     if UserDefaults.standard.bool(forKey: "quantgram.showMessageCount"), let totalCount = data.messageCount {
         let countText = "\(totalCount)"
         var isUser = false
@@ -883,15 +883,6 @@ func infoItems(
             items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: AnyHashable("qg_messageCount"), label: "Сообщений", text: countText, textColor: .primary, action: nil, requestLayout: { _ in }))
         } else {
             items[.peerMembers]!.append(PeerInfoScreenLabeledValueItem(id: AnyHashable("qg_messageCount"), label: "Сообщений всего", text: countText, textColor: .primary, action: nil, requestLayout: { _ in }))
-            if let perMember = data.memberMessageCounts, let members = data.members, case let .shortList(_, memberList) = members {
-                let sortedMembers = memberList.sorted(by: { (perMember[$0.id] ?? 0) > (perMember[$1.id] ?? 0) })
-                for member in sortedMembers {
-                    if let count = perMember[member.id] {
-                        let name = member.peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
-                        items[.peerMembers]!.append(PeerInfoScreenLabeledValueItem(id: AnyHashable("qg_member_\(member.id.toInt64())"), label: name, text: "\(count)", textColor: .primary, action: nil, requestLayout: { _ in }))
-                    }
-                }
-            }
         }
     }
     
