@@ -212,6 +212,11 @@ func phantomSetEnabled(_ enabled: Bool) {
 // Weak reference to the shared account manager, set from the app delegate at
 // launch. Needed to nudge Telegram to re-dial the proxy after recovery.
 private weak var phantomStoredAccountManager: AccountManager<TelegramAccountManagerTypes>?
+// Provider of the active account's connection status, so recovery can verify
+// the connection actually came back and retry otherwise.
+private var phantomConnectionStatusProvider: (() -> Signal<ConnectionStatus, NoError>?)?
+private var phantomRecoveryDisposable: Disposable?
+private let phantomMaxRecoveryAttempts = 6
 
 /// Provides the shared account manager so background→foreground recovery can
 /// force Telegram to re-dial the proxy. Call once at launch.
@@ -220,43 +225,103 @@ public func phantomSetAccountManager(_ accountManager: AccountManager<TelegramAc
     PhantomLifecycleObserver.shared.register()
 }
 
-/// Recovers the Phantom connection: restarts the engine (fresh local SOCKS5
-/// listener + upstream) and then forces Telegram to drop and re-dial the proxy
-/// — exactly what manually toggling the proxy off/on does. This is the reliable
-/// fix for a dead connection after the app was suspended in background.
+/// Provides the active account's connection status signal (call once at launch).
+public func phantomSetConnectionStatusProvider(_ provider: @escaping () -> Signal<ConnectionStatus, NoError>?) {
+    phantomConnectionStatusProvider = provider
+}
+
+// Forces Telegram to drop and re-dial the proxy (equivalent to toggling the
+// proxy off/on) so it reconnects through the freshly restarted local listener.
+private func phantomNudgeProxy(accountManager: AccountManager<TelegramAccountManagerTypes>) {
+    let server = phantomLocalProxyServer()
+    let _ = updateProxySettingsInteractively(accountManager: accountManager, { settings in
+        var settings = settings
+        settings.enabled = false
+        return settings
+    }).start(completed: {
+        Queue.mainQueue().after(0.4, {
+            let _ = updateProxySettingsInteractively(accountManager: accountManager, { settings in
+                var settings = settings
+                if !settings.servers.contains(server) {
+                    settings.servers.append(server)
+                }
+                settings.activeServer = server
+                settings.enabled = true
+                return settings
+            }).start()
+        })
+    })
+}
+
+/// Recovers the Phantom connection after the app was suspended: restarts the
+/// engine and nudges Telegram, then checks the connection status and retries
+/// (a short suspension recovers in one pass; a long one — where the port is
+/// still held or Telegram is in a long backoff — needs several).
 public func phantomReconnect(accountManager: AccountManager<TelegramAccountManagerTypes>) {
     phantomStoredAccountManager = accountManager
+    guard phantomLoadConfig() != nil else {
+        return
+    }
+    phantomRecoveryDisposable?.dispose()
+    phantomRecoveryDisposable = nil
+    phantomRunRecoveryAttempt(accountManager: accountManager, attempt: 0)
+}
+
+private func phantomRunRecoveryAttempt(accountManager: AccountManager<TelegramAccountManagerTypes>, attempt: Int) {
     guard let config = phantomLoadConfig() else {
         return
     }
     let json = phantomConfigJSON(config)
-    let server = phantomLocalProxyServer()
-    // Stopping the engine waits for the port to be released; do it off the main
-    // thread so app activation isn't blocked.
+    // Restart the engine on a background queue (stop waits for the port to be
+    // released, which can block after a long suspension). Fire-and-forget so a
+    // wedged restart can't stall the recovery loop.
     DispatchQueue.global(qos: .userInitiated).async {
         _ = phantomEngineStart(json)
-        Queue.mainQueue().async {
-            let _ = updateProxySettingsInteractively(accountManager: accountManager, { settings in
-                var settings = settings
-                settings.enabled = false
-                return settings
-            }).start(completed: {
-                // Give Telegram a moment to tear down the old proxy connection,
-                // then re-activate so it re-dials through the fresh listener.
-                Queue.mainQueue().after(0.4, {
-                    let _ = updateProxySettingsInteractively(accountManager: accountManager, { settings in
-                        var settings = settings
-                        if !settings.servers.contains(server) {
-                            settings.servers.append(server)
-                        }
-                        settings.activeServer = server
-                        settings.enabled = true
-                        return settings
-                    }).start()
-                })
-            })
-        }
     }
+    // Give the fresh listener a moment to come up, then nudge Telegram to
+    // re-dial and schedule a status check that retries if still offline.
+    Queue.mainQueue().after(1.0, {
+        phantomNudgeProxy(accountManager: accountManager)
+        phantomScheduleRecoveryCheck(accountManager: accountManager, attempt: attempt)
+    })
+}
+
+private func phantomScheduleRecoveryCheck(accountManager: AccountManager<TelegramAccountManagerTypes>, attempt: Int) {
+    Queue.mainQueue().after(5.0, {
+        // Stop retrying if the app went to background, Phantom was disabled, or
+        // we've exhausted the attempts.
+        if UIApplication.shared.applicationState != .active {
+            return
+        }
+        guard let (_, enabled) = phantomLoadPersisted(), enabled else {
+            return
+        }
+        if attempt + 1 >= phantomMaxRecoveryAttempts {
+            return
+        }
+        guard let statusSignal = phantomConnectionStatusProvider?() else {
+            // No status available — do a couple of blind retries only.
+            if attempt < 2 {
+                phantomRunRecoveryAttempt(accountManager: accountManager, attempt: attempt + 1)
+            }
+            return
+        }
+        phantomRecoveryDisposable?.dispose()
+        phantomRecoveryDisposable = (statusSignal
+        |> take(1)
+        |> deliverOnMainQueue).start(next: { status in
+            let connected: Bool
+            switch status {
+            case .online, .updating:
+                connected = true
+            default:
+                connected = false
+            }
+            if !connected {
+                phantomRunRecoveryAttempt(accountManager: accountManager, attempt: attempt + 1)
+            }
+        })
+    })
 }
 
 // When the app is suspended in background (or the screen is locked), iOS freezes

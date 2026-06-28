@@ -1013,6 +1013,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         let accountManager = AccountManager<TelegramAccountManagerTypes>(basePath: rootPath + "/accounts-metadata", isTemporary: false, isReadOnly: false, useCaches: true, removeDatabaseOnError: true)
         self.accountManager = accountManager
         phantomSetAccountManager(accountManager)
+        phantomSetConnectionStatusProvider({ [weak self] in
+            return self?.contextValue?.context.account.network.connectionStatus
+        })
 
         telegramUIDeclareEncodables()
         initializeAccountManagement()
