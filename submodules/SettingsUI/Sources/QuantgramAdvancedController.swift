@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import Display
 import SwiftSignalKit
+import TelegramCore
 import TelegramPresentationData
 import ItemListUI
 import PresentationDataUtils
@@ -16,6 +17,7 @@ public struct QuantgramSettings {
     private static let disableLinkPreviewsKey = "quantgram.disableLinkPreviews"
     private static let disableSwipeCameraKey = "quantgram.disableSwipeCamera"
     private static let showMessageCountKey = "quantgram.showMessageCount"
+    private static let ghostModeKey = "quantgram.ghostMode"
 
     /// "Local pinned chats": server pins seed once on entry, then pinning is
     /// local-only (not synced, not overwritten by the server).
@@ -49,6 +51,12 @@ public struct QuantgramSettings {
         get { return UserDefaults.standard.bool(forKey: showMessageCountKey) }
         set { UserDefaults.standard.set(newValue, forKey: showMessageCountKey) }
     }
+
+    /// "Ghost mode": never report online presence, and force full ghost read.
+    public static var ghostMode: Bool {
+        get { return UserDefaults.standard.bool(forKey: ghostModeKey) }
+        set { UserDefaults.standard.set(newValue, forKey: ghostModeKey) }
+    }
 }
 
 private struct QuantgramState: Equatable {
@@ -56,10 +64,11 @@ private struct QuantgramState: Equatable {
     var disableLinkPreviews: Bool
     var disableSwipeCamera: Bool
     var showMessageCount: Bool
+    var ghostMode: Bool
 }
 
 private func currentQuantgramState() -> QuantgramState {
-    return QuantgramState(localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount)
+    return QuantgramState(localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount, ghostMode: QuantgramSettings.ghostMode)
 }
 
 private final class QuantgramAdvancedArguments {
@@ -68,16 +77,19 @@ private final class QuantgramAdvancedArguments {
     let toggleDisableLinkPreviews: (Bool) -> Void
     let toggleDisableSwipeCamera: (Bool) -> Void
     let toggleShowMessageCount: (Bool) -> Void
-    init(openGhostRead: @escaping () -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void) {
+    let toggleGhostMode: (Bool) -> Void
+    init(openGhostRead: @escaping () -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void, toggleGhostMode: @escaping (Bool) -> Void) {
         self.openGhostRead = openGhostRead
         self.toggleLocalPins = toggleLocalPins
         self.toggleDisableLinkPreviews = toggleDisableLinkPreviews
         self.toggleDisableSwipeCamera = toggleDisableSwipeCamera
         self.toggleShowMessageCount = toggleShowMessageCount
+        self.toggleGhostMode = toggleGhostMode
     }
 }
 
 private enum QuantgramSection: Int32 {
+    case ghost
     case reading
     case pins
     case links
@@ -86,6 +98,8 @@ private enum QuantgramSection: Int32 {
 }
 
 private enum QuantgramEntry: ItemListNodeEntry {
+    case ghostMode(PresentationTheme, String, Bool)
+    case ghostModeInfo(PresentationTheme, String)
     case ghostRead(PresentationTheme, String)
     case ghostReadInfo(PresentationTheme, String)
     case localPins(PresentationTheme, String, Bool)
@@ -99,6 +113,8 @@ private enum QuantgramEntry: ItemListNodeEntry {
 
     var section: ItemListSectionId {
         switch self {
+            case .ghostMode, .ghostModeInfo:
+                return QuantgramSection.ghost.rawValue
             case .ghostRead, .ghostReadInfo:
                 return QuantgramSection.reading.rawValue
             case .localPins, .localPinsInfo:
@@ -114,26 +130,30 @@ private enum QuantgramEntry: ItemListNodeEntry {
 
     var stableId: Int32 {
         switch self {
-            case .ghostRead:
+            case .ghostMode:
                 return 0
-            case .ghostReadInfo:
+            case .ghostModeInfo:
                 return 1
-            case .localPins:
+            case .ghostRead:
                 return 2
-            case .localPinsInfo:
+            case .ghostReadInfo:
                 return 3
-            case .disableLinkPreviews:
+            case .localPins:
                 return 4
-            case .disableLinkPreviewsInfo:
+            case .localPinsInfo:
                 return 5
-            case .disableSwipeCamera:
+            case .disableLinkPreviews:
                 return 6
-            case .disableSwipeCameraInfo:
+            case .disableLinkPreviewsInfo:
                 return 7
-            case .showMessageCount:
+            case .disableSwipeCamera:
                 return 8
-            case .showMessageCountInfo:
+            case .disableSwipeCameraInfo:
                 return 9
+            case .showMessageCount:
+                return 10
+            case .showMessageCountInfo:
+                return 11
         }
     }
 
@@ -144,6 +164,12 @@ private enum QuantgramEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! QuantgramAdvancedArguments
         switch self {
+            case let .ghostMode(_, text, value):
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
+                    arguments.toggleGhostMode(value)
+                })
+            case let .ghostModeInfo(_, text):
+                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
             case let .ghostRead(_, text):
                 return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: nil, title: text, label: "", labelStyle: .text, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
                     arguments.openGhostRead()
@@ -180,6 +206,8 @@ private enum QuantgramEntry: ItemListNodeEntry {
 
 private func quantgramAdvancedEntries(presentationData: PresentationData, state: QuantgramState) -> [QuantgramEntry] {
     var entries: [QuantgramEntry] = []
+    entries.append(.ghostMode(presentationData.theme, "Режим «Призрак»", state.ghostMode))
+    entries.append(.ghostModeInfo(presentationData.theme, "Вы не отображаетесь «в сети» даже при активном использовании. Автоматически включается Full-нечиталка (её нельзя отключить, пока активен «Призрак»). Примечание: «последнее посещение» сервер обновляет при действиях — его скрывают настройки приватности Telegram."))
     entries.append(.ghostRead(presentationData.theme, "Нечиталка"))
     entries.append(.ghostReadInfo(presentationData.theme, "Управление чтением сообщений без отправки галочек о прочтении: режимы Light и Full."))
     entries.append(.localPins(presentationData.theme, "Локальные закреплённые чаты", state.localPins))
@@ -213,6 +241,12 @@ public func quantgramAdvancedController(context: AccountContext) -> ViewControll
         statePromise.set(currentQuantgramState())
     }, toggleShowMessageCount: { value in
         QuantgramSettings.showMessageCount = value
+        statePromise.set(currentQuantgramState())
+    }, toggleGhostMode: { value in
+        QuantgramSettings.ghostMode = value
+        // Apply presence immediately (otherwise it changes only on the next
+        // foreground/background transition). SharedWakeupManager keeps it gated.
+        context.account.shouldKeepOnlinePresence.set(.single(!value))
         statePromise.set(currentQuantgramState())
     })
 
