@@ -318,6 +318,10 @@ private class ReplyThreadHistoryContextImpl {
         let peerId = self.peerId
         let threadId = self.threadId
         
+        if QuantgramGhostRead.shouldSuppressRead(peerId) {
+            return
+        }
+        
         if messageIndex.id.namespace != Namespaces.Message.Cloud {
             return
         }

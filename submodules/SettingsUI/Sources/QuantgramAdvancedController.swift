@@ -11,19 +11,11 @@ import AccountContext
 // UserDefaults so both the UI here and the core logic can read the same flags
 // within the app process.
 public struct QuantgramSettings {
-    private static let ghostReadKey = "quantgram.ghostRead"
     private static let localPinsKey = "quantgram.localPins"
     private static let pinsSeededKey = "quantgram.pinsSeeded"
     private static let disableLinkPreviewsKey = "quantgram.disableLinkPreviews"
     private static let disableSwipeCameraKey = "quantgram.disableSwipeCamera"
     private static let showMessageCountKey = "quantgram.showMessageCount"
-
-    /// "Read without read receipt": incoming messages are marked read only after
-    /// the user sends a reply in the chat.
-    public static var ghostRead: Bool {
-        get { return UserDefaults.standard.bool(forKey: ghostReadKey) }
-        set { UserDefaults.standard.set(newValue, forKey: ghostReadKey) }
-    }
 
     /// "Local pinned chats": server pins seed once on entry, then pinning is
     /// local-only (not synced, not overwritten by the server).
@@ -60,7 +52,6 @@ public struct QuantgramSettings {
 }
 
 private struct QuantgramState: Equatable {
-    var ghostRead: Bool
     var localPins: Bool
     var disableLinkPreviews: Bool
     var disableSwipeCamera: Bool
@@ -68,17 +59,17 @@ private struct QuantgramState: Equatable {
 }
 
 private func currentQuantgramState() -> QuantgramState {
-    return QuantgramState(ghostRead: QuantgramSettings.ghostRead, localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount)
+    return QuantgramState(localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount)
 }
 
 private final class QuantgramAdvancedArguments {
-    let toggleGhostRead: (Bool) -> Void
+    let openGhostRead: () -> Void
     let toggleLocalPins: (Bool) -> Void
     let toggleDisableLinkPreviews: (Bool) -> Void
     let toggleDisableSwipeCamera: (Bool) -> Void
     let toggleShowMessageCount: (Bool) -> Void
-    init(toggleGhostRead: @escaping (Bool) -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void) {
-        self.toggleGhostRead = toggleGhostRead
+    init(openGhostRead: @escaping () -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void) {
+        self.openGhostRead = openGhostRead
         self.toggleLocalPins = toggleLocalPins
         self.toggleDisableLinkPreviews = toggleDisableLinkPreviews
         self.toggleDisableSwipeCamera = toggleDisableSwipeCamera
@@ -95,7 +86,7 @@ private enum QuantgramSection: Int32 {
 }
 
 private enum QuantgramEntry: ItemListNodeEntry {
-    case ghostRead(PresentationTheme, String, Bool)
+    case ghostRead(PresentationTheme, String)
     case ghostReadInfo(PresentationTheme, String)
     case localPins(PresentationTheme, String, Bool)
     case localPinsInfo(PresentationTheme, String)
@@ -153,9 +144,9 @@ private enum QuantgramEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! QuantgramAdvancedArguments
         switch self {
-            case let .ghostRead(_, text, value):
-                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
-                    arguments.toggleGhostRead(value)
+            case let .ghostRead(_, text):
+                return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: nil, title: text, label: "", labelStyle: .text, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
+                    arguments.openGhostRead()
                 })
             case let .ghostReadInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
@@ -189,8 +180,8 @@ private enum QuantgramEntry: ItemListNodeEntry {
 
 private func quantgramAdvancedEntries(presentationData: PresentationData, state: QuantgramState) -> [QuantgramEntry] {
     var entries: [QuantgramEntry] = []
-    entries.append(.ghostRead(presentationData.theme, "Чтение без галочек", state.ghostRead))
-    entries.append(.ghostReadInfo(presentationData.theme, "Входящие сообщения помечаются прочитанными только после того, как вы ответите в чате."))
+    entries.append(.ghostRead(presentationData.theme, "Нечиталка"))
+    entries.append(.ghostReadInfo(presentationData.theme, "Управление чтением сообщений без отправки галочек о прочтении: режимы Light и Full."))
     entries.append(.localPins(presentationData.theme, "Локальные закреплённые чаты", state.localPins))
     entries.append(.localPinsInfo(presentationData.theme, "Закреплённые чаты загружаются с сервера один раз при входе, дальше закрепление работает только локально (не синхронизируется и не ограничивается лимитом сервера). На других устройствах эти закрепления не появятся."))
     entries.append(.disableLinkPreviews(presentationData.theme, "Не генерировать превью ссылок", state.disableLinkPreviews))
@@ -205,11 +196,12 @@ private func quantgramAdvancedEntries(presentationData: PresentationData, state:
 public func quantgramAdvancedController(context: AccountContext) -> ViewController {
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
 
+    var pushControllerImpl: ((ViewController) -> Void)?
+
     let statePromise = ValuePromise<QuantgramState>(currentQuantgramState(), ignoreRepeated: true)
 
-    let arguments = QuantgramAdvancedArguments(toggleGhostRead: { value in
-        QuantgramSettings.ghostRead = value
-        statePromise.set(currentQuantgramState())
+    let arguments = QuantgramAdvancedArguments(openGhostRead: {
+        pushControllerImpl?(quantgramGhostReadController(context: context))
     }, toggleLocalPins: { value in
         QuantgramSettings.localPins = value
         statePromise.set(currentQuantgramState())
@@ -233,5 +225,8 @@ public func quantgramAdvancedController(context: AccountContext) -> ViewControll
     }
 
     let controller = ItemListController(presentationData: ItemListPresentationData(presentationData), updatedPresentationData: context.sharedContext.presentationData |> map(ItemListPresentationData.init(_:)), state: signal, tabBarItem: nil)
+    pushControllerImpl = { [weak controller] c in
+        (controller?.navigationController as? NavigationController)?.pushViewController(c)
+    }
     return controller
 }
