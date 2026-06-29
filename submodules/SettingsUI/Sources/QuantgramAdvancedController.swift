@@ -19,6 +19,7 @@ public struct QuantgramSettings {
     private static let showMessageCountKey = "quantgram.showMessageCount"
     private static let ghostModeKey = "quantgram.ghostMode"
     private static let hideStoriesKey = "quantgram.hideStories"
+    private static let hideSearchButtonKey = "quantgram.hideSearchButton"
 
     /// "Local pinned chats": server pins seed once on entry, then pinning is
     /// local-only (not synced, not overwritten by the server).
@@ -64,6 +65,13 @@ public struct QuantgramSettings {
         get { return UserDefaults.standard.bool(forKey: hideStoriesKey) }
         set { UserDefaults.standard.set(newValue, forKey: hideStoriesKey) }
     }
+
+    /// "Hide search button": hide the tab-bar search button on the Chats screen
+    /// (the pull-down search bar stays).
+    public static var hideSearchButton: Bool {
+        get { return UserDefaults.standard.bool(forKey: hideSearchButtonKey) }
+        set { UserDefaults.standard.set(newValue, forKey: hideSearchButtonKey) }
+    }
 }
 
 private struct QuantgramState: Equatable {
@@ -73,10 +81,11 @@ private struct QuantgramState: Equatable {
     var showMessageCount: Bool
     var ghostMode: Bool
     var hideStories: Bool
+    var hideSearchButton: Bool
 }
 
 private func currentQuantgramState() -> QuantgramState {
-    return QuantgramState(localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount, ghostMode: QuantgramSettings.ghostMode, hideStories: QuantgramSettings.hideStories)
+    return QuantgramState(localPins: QuantgramSettings.localPins, disableLinkPreviews: QuantgramSettings.disableLinkPreviews, disableSwipeCamera: QuantgramSettings.disableSwipeCamera, showMessageCount: QuantgramSettings.showMessageCount, ghostMode: QuantgramSettings.ghostMode, hideStories: QuantgramSettings.hideStories, hideSearchButton: QuantgramSettings.hideSearchButton)
 }
 
 private final class QuantgramAdvancedArguments {
@@ -87,7 +96,8 @@ private final class QuantgramAdvancedArguments {
     let toggleShowMessageCount: (Bool) -> Void
     let toggleGhostMode: (Bool) -> Void
     let toggleHideStories: (Bool) -> Void
-    init(openGhostRead: @escaping () -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void, toggleGhostMode: @escaping (Bool) -> Void, toggleHideStories: @escaping (Bool) -> Void) {
+    let toggleHideSearchButton: (Bool) -> Void
+    init(openGhostRead: @escaping () -> Void, toggleLocalPins: @escaping (Bool) -> Void, toggleDisableLinkPreviews: @escaping (Bool) -> Void, toggleDisableSwipeCamera: @escaping (Bool) -> Void, toggleShowMessageCount: @escaping (Bool) -> Void, toggleGhostMode: @escaping (Bool) -> Void, toggleHideStories: @escaping (Bool) -> Void, toggleHideSearchButton: @escaping (Bool) -> Void) {
         self.openGhostRead = openGhostRead
         self.toggleLocalPins = toggleLocalPins
         self.toggleDisableLinkPreviews = toggleDisableLinkPreviews
@@ -95,6 +105,7 @@ private final class QuantgramAdvancedArguments {
         self.toggleShowMessageCount = toggleShowMessageCount
         self.toggleGhostMode = toggleGhostMode
         self.toggleHideStories = toggleHideStories
+        self.toggleHideSearchButton = toggleHideSearchButton
     }
 }
 
@@ -121,6 +132,8 @@ private enum QuantgramEntry: ItemListNodeEntry {
     case disableSwipeCameraInfo(PresentationTheme, String)
     case hideStories(PresentationTheme, String, Bool)
     case hideStoriesInfo(PresentationTheme, String)
+    case hideSearchButton(PresentationTheme, String, Bool)
+    case hideSearchButtonInfo(PresentationTheme, String)
     case showMessageCount(PresentationTheme, String, Bool)
     case showMessageCountInfo(PresentationTheme, String)
 
@@ -136,7 +149,7 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 return QuantgramSection.links.rawValue
             case .disableSwipeCamera, .disableSwipeCameraInfo:
                 return QuantgramSection.camera.rawValue
-            case .hideStories, .hideStoriesInfo:
+            case .hideStories, .hideStoriesInfo, .hideSearchButton, .hideSearchButtonInfo:
                 return QuantgramSection.chats.rawValue
             case .showMessageCount, .showMessageCountInfo:
                 return QuantgramSection.messages.rawValue
@@ -169,10 +182,14 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 return 10
             case .hideStoriesInfo:
                 return 11
-            case .showMessageCount:
+            case .hideSearchButton:
                 return 12
-            case .showMessageCountInfo:
+            case .hideSearchButtonInfo:
                 return 13
+            case .showMessageCount:
+                return 14
+            case .showMessageCountInfo:
+                return 15
         }
     }
 
@@ -219,6 +236,12 @@ private enum QuantgramEntry: ItemListNodeEntry {
                 })
             case let .hideStoriesInfo(_, text):
                 return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+            case let .hideSearchButton(_, text, value):
+                return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
+                    arguments.toggleHideSearchButton(value)
+                })
+            case let .hideSearchButtonInfo(_, text):
+                return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
             case let .showMessageCount(_, text, value):
                 return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: text, value: value, enableInteractiveChanges: true, enabled: true, sectionId: self.section, style: .blocks, updated: { value in
                     arguments.toggleShowMessageCount(value)
@@ -243,6 +266,8 @@ private func quantgramAdvancedEntries(presentationData: PresentationData, state:
     entries.append(.disableSwipeCameraInfo(presentationData.theme, "Свайп по списку чатов больше не открывает камеру историй. Переключение папок свайпом продолжает работать."))
     entries.append(.hideStories(presentationData.theme, "Скрыть истории", state.hideStories))
     entries.append(.hideStoriesInfo(presentationData.theme, "Блок историй на экране «Чаты» полностью скрывается — нет ни блока, ни свёрнутого состояния, ни анимации разворота."))
+    entries.append(.hideSearchButton(presentationData.theme, "Скрыть кнопку поиска", state.hideSearchButton))
+    entries.append(.hideSearchButtonInfo(presentationData.theme, "Круглая кнопка поиска в нижней панели на экране «Чаты» скрывается. Строка поиска по свайпу списка вниз остаётся. Применяется после перезапуска приложения."))
     entries.append(.showMessageCount(presentationData.theme, "Показывать количество сообщений", state.showMessageCount))
     entries.append(.showMessageCountInfo(presentationData.theme, "В профиле чата (ЛС и группы) показывается общее число сообщений в переписке."))
     return entries
@@ -275,6 +300,9 @@ public func quantgramAdvancedController(context: AccountContext) -> ViewControll
         statePromise.set(currentQuantgramState())
     }, toggleHideStories: { value in
         QuantgramSettings.hideStories = value
+        statePromise.set(currentQuantgramState())
+    }, toggleHideSearchButton: { value in
+        QuantgramSettings.hideSearchButton = value
         statePromise.set(currentQuantgramState())
     })
 

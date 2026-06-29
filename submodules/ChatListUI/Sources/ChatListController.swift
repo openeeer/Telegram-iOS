@@ -772,7 +772,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         
         self.updateNavigationMetadata()
 
-        self.updateTabBarSearchState(ViewController.TabBarSearchState(isActive: false), transition: .immediate)
+        self.updateTabBarSearchState(UserDefaults.standard.bool(forKey: "quantgram.hideSearchButton") ? nil : ViewController.TabBarSearchState(isActive: false), transition: .immediate)
         
         self.globalControlPanelsContextStateDisposable = (self.globalControlPanelsContext.state
         |> deliverOnMainQueue).startStrict(next: { [weak self] state in
@@ -4716,7 +4716,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         
         completion?()
         
-        self.updateTabBarSearchState(ViewController.TabBarSearchState(isActive: false), transition: transition)
+        self.updateTabBarSearchState(UserDefaults.standard.bool(forKey: "quantgram.hideSearchButton") ? nil : ViewController.TabBarSearchState(isActive: false), transition: transition)
         (self.parent as? TabBarController)?.updateIsTabBarHidden(false, transition: transition)
         
         self.isSearchActive = false
