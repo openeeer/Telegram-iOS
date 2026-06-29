@@ -267,7 +267,7 @@ private func quantgramAdvancedEntries(presentationData: PresentationData, state:
     entries.append(.hideStories(presentationData.theme, "Скрыть истории", state.hideStories))
     entries.append(.hideStoriesInfo(presentationData.theme, "Блок историй на экране «Чаты» полностью скрывается — нет ни блока, ни свёрнутого состояния, ни анимации разворота."))
     entries.append(.hideSearchButton(presentationData.theme, "Скрыть кнопку поиска", state.hideSearchButton))
-    entries.append(.hideSearchButtonInfo(presentationData.theme, "Круглая кнопка поиска в нижней панели на экране «Чаты» скрывается. Строка поиска по свайпу списка вниз остаётся. Применяется после перезапуска приложения."))
+    entries.append(.hideSearchButtonInfo(presentationData.theme, "Круглая кнопка поиска в нижней панели скрывается на всех вкладках (Чаты, Контакты, Звонки, Настройки). Строка поиска (свайп списка вниз) остаётся."))
     entries.append(.showMessageCount(presentationData.theme, "Показывать количество сообщений", state.showMessageCount))
     entries.append(.showMessageCountInfo(presentationData.theme, "В профиле чата (ЛС и группы) показывается общее число сообщений в переписке."))
     return entries

@@ -266,6 +266,9 @@ final class TabBarControllerNode: ASDisplayNode {
                     )
                 },
                 search: self.currentController?.tabBarSearchState.flatMap { tabBarSearchState in
+                    if UserDefaults.standard.bool(forKey: "quantgram.hideSearchButton") && !tabBarSearchState.isActive {
+                        return nil
+                    }
                     return TabBarComponent.Search(
                         isActive: tabBarSearchState.isActive,
                         activate: { [weak self] in
