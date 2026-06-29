@@ -590,12 +590,19 @@ public class ContactsController: ViewController {
             }
             
             var items: [ContextMenuItem] = []
+            let nameDescending = UserDefaults.standard.bool(forKey: "quantgram.contactsNameDescending")
             items.append(.action(ContextMenuActionItem(text: presentationData.strings.Contacts_Sort_ByLastSeen, icon: { theme in return currentSettings.sortOrder == .presence ? generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor) : UIImage() }, action: { _, f in
                 f(.default)
                 updateSortOrder(.presence)
             })))
-            items.append(.action(ContextMenuActionItem(text: presentationData.strings.Contacts_Sort_ByName, icon: { theme in return currentSettings.sortOrder == .natural ? generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor) : UIImage() }, action: { _, f in
+            items.append(.action(ContextMenuActionItem(text: presentationData.strings.Contacts_Sort_ByName + " (А→Я)", icon: { theme in return (currentSettings.sortOrder == .natural && !nameDescending) ? generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor) : UIImage() }, action: { _, f in
                 f(.default)
+                UserDefaults.standard.set(false, forKey: "quantgram.contactsNameDescending")
+                updateSortOrder(.natural)
+            })))
+            items.append(.action(ContextMenuActionItem(text: presentationData.strings.Contacts_Sort_ByName + " (Я→А)", icon: { theme in return (currentSettings.sortOrder == .natural && nameDescending) ? generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor) : UIImage() }, action: { _, f in
+                f(.default)
+                UserDefaults.standard.set(true, forKey: "quantgram.contactsNameDescending")
                 updateSortOrder(.natural)
             })))
             return items

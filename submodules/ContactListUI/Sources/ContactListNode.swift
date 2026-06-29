@@ -581,6 +581,9 @@ private func contactListNodeEntries(
                 entries.append(.option(i, options[i], nil, theme, strings))
             }
             orderedPeers = startsWithLetter + startsWithOther
+            if UserDefaults.standard.bool(forKey: "quantgram.contactsNameDescending") {
+                orderedPeers.reverse()
+            }
         case .search:
             orderedPeers = peers
     }
